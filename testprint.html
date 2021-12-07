@@ -1,464 +1,703 @@
 <html>
+
 <head>
     <title>Printer Tool</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-1BmE4kWBq78iYhFldvKuhfTAU6auU8tT94WrHftjDbrCEXSU1oBoqyl2QvZ6jIW3" crossorigin="anonymous">
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light dark">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet"
+        integrity="sha384-1BmE4kWBq78iYhFldvKuhfTAU6auU8tT94WrHftjDbrCEXSU1oBoqyl2QvZ6jIW3" crossorigin="anonymous">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-dark-5@1.1.3/dist/css/bootstrap-dark-plugin.min.css"
+        rel="stylesheet">
+    <meta name="theme-color" content="#111111" media="(prefers-color-scheme: light)">
+    <meta name="theme-color" content="#eeeeee" media="(prefers-color-scheme: dark)">
+
 </head>
+
 <body>
     <div class="container-fluid">
         <div class="row">
-            <div class="col-2">
-                <!-- Printers! -->
-                <div class="row">
-                    <div class="col-sm-12">
-                        <span id="status">No printer detected.</span>
-                        <button class="btn btn-primary" id="addprinter">➕ Add Printer</button>
-                    </div>
+            <div class="col-3">
+                <div class="d-grid gap-2 col-8 mx-auto mb-3">
+                    <button class="btn btn-primary" id="addprinter">➕ Add Printer</button>
                 </div>
-                <div id="printerlist">
-                </div>
+                <ol id="printerlist" class="list-group list-group-numbered">
+                </ol>
             </div>
-            <div class="col-10">
-                <!-- Things to print! -->
-                <textarea id="data" cols="80", rows="24"></textarea>
+            <div class="col-9">
+                <form id="labelForm">
+                    <!-- Things to print! -->
+                    <textarea id="labelFormText" name="labelText" maxlength="25" cols="25" rows="25" wrap="hard"
+                        style="resize: none; font-family: monospace; font-size: 18px; overflow-y: scroll; overflow-x: hidden;"
+                        placeholder="Enter your label text here!"></textarea>
+                </form>
             </div>
         </div>
     </div>
-<script>
+    <div id="printerOptionModal" class="modal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <form id="printerSettingsForm">
+                    <div class="modal-header">
+                        <h5 class="modal-title">Label Settings</h5>
+                        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                    <div class="modal-body">
+                        <label for="modalPrinterIndex" class="form-label">Printer ID</label>
+                        <div class="input-group mb-3">
+                            <span id="modalPrinterIndexText" class="input-group-text">42Q424242424</span>
+                            <input id="modalPrinterIndex" class="form-control" type="text" value="-1"
+                                aria-label="Printer ID" aria-describedby="modalPrinterIndexText" disabled readonly>
+                        </div>
+                        <div class="mb-3">
+                            <div class="row">
+                                <div class="col">
+                                    <label for="modalLabelWidth" class="form-label">Label Width</label>
+                                    <div class="input-group mb-3">
+                                        <input id="modalLabelWidth" type="text" class="form-control" placeholder="2.25"
+                                            aria-label="Width" required pattern="\d+\.*\d*">
+                                        <span id="modalLabelWidthText" class="input-group-text">in</span>
+                                    </div>
+                                </div>
+                                <div class="col">
+                                    <label for="modalLabelHeight" class="form-label">Label Height</label>
+                                    <div class="input-group mb-3">
+                                        <input id="modalLabelHeight" type="text" class="form-control" placeholder="1.25"
+                                            aria-label="Height" required pattern="\d+\.*\d*">
+                                        <span id="modalLabelHeightText" class="input-group-text">in</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="mb-3">
+                            <div class="row">
+                                <div class="col row mb-3">
+                                    <label for="modalColor" class="col-sm-8 col-form-label">Label Color</label>
+                                    <div class="col-sm-4">
+                                        <input id="modalColor" type="color" class="form-control form-control-color"
+                                            value="#FFFFFF" title="Choose paper color" style="height: 2.5rem;">
+                                    </div>
+                                </div>
+                                <div class="col row mb-3">
+                                    <label for="modalFont" class="col-sm-5 col-form-label">Font</label>
+                                    <div class="col-sm-7">
+                                        <select id="modalFont" class="form-select" aria-label="Font selection">
+                                            <option>1</option>
+                                            <option>2</option>
+                                            <option>3</option>
+                                            <option>4</option>
+                                            <option>5</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                        <input id="modalSubmit" type="submit" class="btn btn-primary" value="Save">
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    <script>
+        // idb keyval wrapper
+        // https://github.com/jakearchibald/idb-keyval
+        function _typeof(n) { return (_typeof = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (n) { return typeof n } : function (n) { return n && "function" == typeof Symbol && n.constructor === Symbol && n !== Symbol.prototype ? "symbol" : typeof n })(n) } !function (n, t) { "object" === ("undefined" == typeof exports ? "undefined" : _typeof(exports)) && "undefined" != typeof module ? t(exports) : "function" == typeof define && define.amd ? define(["exports"], t) : t((n = "undefined" != typeof globalThis ? globalThis : n || self).idbKeyval = {}) }(this, (function (n) { "use strict"; function t(n) { return new Promise((function (t, e) { n.oncomplete = n.onsuccess = function () { return t(n.result) }, n.onabort = n.onerror = function () { return e(n.error) } })) } function e(n, e) { var r, o = (!navigator.userAgentData && /Safari\//.test(navigator.userAgent) && !/Chrom(e|ium)\//.test(navigator.userAgent) && indexedDB.databases ? new Promise((function (n) { var t = function () { return indexedDB.databases().finally(n) }; r = setInterval(t, 100), t() })).finally((function () { return clearInterval(r) })) : Promise.resolve()).then((function () { var r = indexedDB.open(n); return r.onupgradeneeded = function () { return r.result.createObjectStore(e) }, t(r) })); return function (n, t) { return o.then((function (r) { return t(r.transaction(e, n).objectStore(e)) })) } } var r; function o() { return r || (r = e("keyval-store", "keyval")), r } function u(n, e) { return n("readonly", (function (n) { return n.openCursor().onsuccess = function () { this.result && (e(this.result), this.result.continue()) }, t(n.transaction) })) } n.clear = function () { var n = arguments.length > 0 && void 0 !== arguments[0] ? arguments[0] : o(); return n("readwrite", (function (n) { return n.clear(), t(n.transaction) })) }, n.createStore = e, n.del = function (n) { var e = arguments.length > 1 && void 0 !== arguments[1] ? arguments[1] : o(); return e("readwrite", (function (e) { return e.delete(n), t(e.transaction) })) }, n.delMany = function (n) { var e = arguments.length > 1 && void 0 !== arguments[1] ? arguments[1] : o(); return e("readwrite", (function (e) { return n.forEach((function (n) { return e.delete(n) })), t(e.transaction) })) }, n.entries = function () { var n = arguments.length > 0 && void 0 !== arguments[0] ? arguments[0] : o(), t = []; return u(n, (function (n) { return t.push([n.key, n.value]) })).then((function () { return t })) }, n.get = function (n) { var e = arguments.length > 1 && void 0 !== arguments[1] ? arguments[1] : o(); return e("readonly", (function (e) { return t(e.get(n)) })) }, n.getMany = function (n) { var e = arguments.length > 1 && void 0 !== arguments[1] ? arguments[1] : o(); return e("readonly", (function (e) { return Promise.all(n.map((function (n) { return t(e.get(n)) }))) })) }, n.keys = function () { var n = arguments.length > 0 && void 0 !== arguments[0] ? arguments[0] : o(), t = []; return u(n, (function (n) { return t.push(n.key) })).then((function () { return t })) }, n.promisifyRequest = t, n.set = function (n, e) { var r = arguments.length > 2 && void 0 !== arguments[2] ? arguments[2] : o(); return r("readwrite", (function (r) { return r.put(e, n), t(r.transaction) })) }, n.setMany = function (n) { var e = arguments.length > 1 && void 0 !== arguments[1] ? arguments[1] : o(); return e("readwrite", (function (e) { return n.forEach((function (n) { return e.put(n[1], n[0]) })), t(e.transaction) })) }, n.update = function (n, e) { var r = arguments.length > 2 && void 0 !== arguments[2] ? arguments[2] : o(); return r("readwrite", (function (r) { return new Promise((function (o, u) { r.get(n).onsuccess = function () { try { r.put(e(this.result), n), o(t(r.transaction)) } catch (n) { u(n) } } })) })) }, n.values = function () { var n = arguments.length > 0 && void 0 !== arguments[0] ? arguments[0] : o(), t = []; return u(n, (function (n) { return t.push(n.value) })).then((function () { return t })) }, Object.defineProperty(n, "__esModule", { value: !0 }) }));
 
-// idb keyval wrapper
-// https://github.com/jakearchibald/idb-keyval
-function _typeof(n){return(_typeof="function"==typeof Symbol&&"symbol"==typeof Symbol.iterator?function(n){return typeof n}:function(n){return n&&"function"==typeof Symbol&&n.constructor===Symbol&&n!==Symbol.prototype?"symbol":typeof n})(n)}!function(n,t){"object"===("undefined"==typeof exports?"undefined":_typeof(exports))&&"undefined"!=typeof module?t(exports):"function"==typeof define&&define.amd?define(["exports"],t):t((n="undefined"!=typeof globalThis?globalThis:n||self).idbKeyval={})}(this,(function(n){"use strict";function t(n){return new Promise((function(t,e){n.oncomplete=n.onsuccess=function(){return t(n.result)},n.onabort=n.onerror=function(){return e(n.error)}}))}function e(n,e){var r,o=(!navigator.userAgentData&&/Safari\//.test(navigator.userAgent)&&!/Chrom(e|ium)\//.test(navigator.userAgent)&&indexedDB.databases?new Promise((function(n){var t=function(){return indexedDB.databases().finally(n)};r=setInterval(t,100),t()})).finally((function(){return clearInterval(r)})):Promise.resolve()).then((function(){var r=indexedDB.open(n);return r.onupgradeneeded=function(){return r.result.createObjectStore(e)},t(r)}));return function(n,t){return o.then((function(r){return t(r.transaction(e,n).objectStore(e))}))}}var r;function o(){return r||(r=e("keyval-store","keyval")),r}function u(n,e){return n("readonly",(function(n){return n.openCursor().onsuccess=function(){this.result&&(e(this.result),this.result.continue())},t(n.transaction)}))}n.clear=function(){var n=arguments.length>0&&void 0!==arguments[0]?arguments[0]:o();return n("readwrite",(function(n){return n.clear(),t(n.transaction)}))},n.createStore=e,n.del=function(n){var e=arguments.length>1&&void 0!==arguments[1]?arguments[1]:o();return e("readwrite",(function(e){return e.delete(n),t(e.transaction)}))},n.delMany=function(n){var e=arguments.length>1&&void 0!==arguments[1]?arguments[1]:o();return e("readwrite",(function(e){return n.forEach((function(n){return e.delete(n)})),t(e.transaction)}))},n.entries=function(){var n=arguments.length>0&&void 0!==arguments[0]?arguments[0]:o(),t=[];return u(n,(function(n){return t.push([n.key,n.value])})).then((function(){return t}))},n.get=function(n){var e=arguments.length>1&&void 0!==arguments[1]?arguments[1]:o();return e("readonly",(function(e){return t(e.get(n))}))},n.getMany=function(n){var e=arguments.length>1&&void 0!==arguments[1]?arguments[1]:o();return e("readonly",(function(e){return Promise.all(n.map((function(n){return t(e.get(n))})))}))},n.keys=function(){var n=arguments.length>0&&void 0!==arguments[0]?arguments[0]:o(),t=[];return u(n,(function(n){return t.push(n.key)})).then((function(){return t}))},n.promisifyRequest=t,n.set=function(n,e){var r=arguments.length>2&&void 0!==arguments[2]?arguments[2]:o();return r("readwrite",(function(r){return r.put(e,n),t(r.transaction)}))},n.setMany=function(n){var e=arguments.length>1&&void 0!==arguments[1]?arguments[1]:o();return e("readwrite",(function(e){return n.forEach((function(n){return e.put(n[1],n[0])})),t(e.transaction)}))},n.update=function(n,e){var r=arguments.length>2&&void 0!==arguments[2]?arguments[2]:o();return r("readwrite",(function(r){return new Promise((function(o,u){r.get(n).onsuccess=function(){try{r.put(e(this.result),n),o(t(r.transaction))}catch(n){u(n)}}}))}))},n.values=function(){var n=arguments.length>0&&void 0!==arguments[0]?arguments[0]:o(),t=[];return u(n,(function(n){return t.push(n.value)})).then((function(){return t}))},Object.defineProperty(n,"__esModule",{value:!0})}));
+        class PrinterManager {
+            #devices = [];
+            #printers = [];
 
+            #printerType;
+            #activePrinter = 0;
 
-// Globals because I roll cool like that
-var devices = [];
+            constructor(printerType, btnContainer, labelForm, addPrinterBtn, configModal) {
+                this.#printerType = printerType;
 
-// Classes because I roll cool like that
-class lp2844 {
-    #cmdBuffer = "";
-    #fontNumber = "1";
+                this.defaultLabelWidth = 4;
+                this.defaultLabelHeight = 6;
 
-    // LP 2844 has a 203 DPI print head
-    #dpi = 203;
+                this.btnContainer = btnContainer;
+                this.labelForm = labelForm;
+                this.labelTextarea = this.labelForm.querySelector('textarea');
 
-    #xLabel;
-    #yLabel;
+                this.addPrinterBtn = addPrinterBtn;
+                addPrinterBtn.addEventListener('click', async (e) => this.printerPair(e));
 
-    // Temp holders on a per-label basis.
-    #xOffset = 0;
-    #yOffset = 0;
+                this.configModal = configModal;
+                this.configModalHandle = new bootstrap.Modal(this.configModal);
+                this.configModal.querySelector('form').addEventListener('submit', (e) => this.updatePrinterConfig(e));
 
-    constructor(labelWidth, labelHeight, device) {
-        this.labelWidth = labelWidth; // inches
-        this.#xLabel = Math.trunc(labelWidth * this.#dpi);
+                navigator.usb.addEventListener('connect', async (e) => this.printerConnect(e));
+                navigator.usb.addEventListener('disconnect', async (e) => this.printerDisconnect(e));
+            }
 
-        this.labelHeight = labelHeight; // inches
-        this.#yLabel = Math.trunc(labelHeight * this.#dpi);
+            get activePrinter() { return this.#activePrinter; }
+            set activePrinter(value) {
+                this.#activePrinter = value;
+                let printer = this.#printers[this.#activePrinter];
 
-        this.device = device; // The USB device to work with
+                let font = printer.fontSizes[printer.fontSize];
+                let cols = Math.floor(printer.labelWidthDots / font.x);
+                let rows = Math.floor(printer.labelHeightDots / font.y);
+                this.labelTextarea.cols = cols;
+                this.labelTextarea.rows = rows;
+                this.labelTextarea.maxLength = rows * cols;
+            }
 
-        // Additional spacing between lines of text, in dots.
-        this.lineSpacing = 0;
-    }
+            async printForm(printerId) {
+                let rawText = (new FormData(this.labelForm)).get('labelText').replaceAll("\r", "");
+                let printer = this.#printers[printerId];
 
-    // LP 2844 and variants use this USB vendor ID
-    static get usbVendorId() { return 0x0a5f; }
+                printer.begin().setOffset(5, 0);
+                rawText.split("\n").forEach(l => printer.addText(l));
+                printer.end();
+                await printer.print();
+            }
 
-    // LP 2844 print heads are 203 DPI.
-    get dpi() { return this.#dpi; }
+            async printerReloadAll() {
+                this.#devices = [];
+                this.#printers = []; // TODO: Dispose all printers first.
+                navigator.usb.getDevices().then((printers) => {
+                    printers.forEach(d => {
+                        this.#devices.push(d);
+                        this.#printers.push(new this.#printerType(this.defaultLabelWidth, this.defaultLabelHeight, d));
+                    });
 
-    get serial() { return this.device.serialNumber; }
+                    this.resetPrinterButtons();
+                });
+            }
 
-    get commandBuffer() { return this.#cmdBuffer; }
+            async printerConnect(e) {
+                if (!this.#devices.includes(e.device)) {
+                    this.#devices.push(e.device);
+                    this.#printers.push(new this.#printerType(this.defaultLabelWidth, this.defaultLabelHeight, e.device));
+                }
 
-    get labelWidthDots() { return this.#xLabel; }
-    get labelHeightDots() { return this.#yLabel; }
+                const listen = async () => {
+                    await e.device.open();
+                    await e.device.selectConfiguration(1);
+                    await e.device.claimInterface(0);
+                    while (true) {
+                        const result = await e.device.transferIn(5, 64);
+                        console.log("PRINTER:\n" + (new TextDecoder()).decode(result.data));
+                    }
+                }
 
-    get fontSizes() {
-        return {
-            "1" :  { "y" : 12, "x" : 8 },
-            "2" :  { "y" : 16, "x" : 10 },
-            "3" :  { "y" : 20, "x" : 12 },
-            "4" :  { "y" : 24, "x" : 14 },
-            "5" :  { "y" : 48, "x" : 32 }
-        };
-    };
+                listen();
 
-    /**
-     * Begin a new label. Must be called to start a new label.
-     */
-    begin() {
-        return this.addCmd("\nN");
-    }
+                this.resetPrinterButtons();
+            }
 
-    /**
-     * Complete a label. Must be called to print the label.
-     * @param (int) count - The number of labels to print, 1 or higher.
-     */
-    end(count) {
-        count = Math.trunc(count) || 1;
-        count = (count < 1) ? 1 : count;
+            async printerDisconnect(e) {
+                const idx = this.#devices.findIndex(i => e.device == i);
+                if (idx > -1) {
+                    this.#devices.splice(idx, 1);
+                    this.#printers.splice(idx, 1);
+                }
 
-        return this.addCmd(`P${count}`);
-    }
+                this.resetPrinterButtons();
+            }
 
-    /**
-     * Run the commands in the command buffer against the printer, clearing the buffer.
-     */
-    async print() {
-        // Open the device and connect to its interface (there should be 1)
-        await this.device.open();
+            async printerPair(e) {
+                try {
+                    let device = await navigator.usb.requestDevice({
+                        filters: [
+                            { vendorId: this.#printerType.usbVendorId }
+                        ]
+                    });
 
-        try {
-            await this.device.selectConfiguration(1);
-            await this.device.claimInterface(0);
+                    if (!this.#devices.includes(device)) {
+                        this.$devices.push(device);
+                        this.$printers.push(new this.#printerType(this.defaultLabelWidth, this.defaultLabelHeight, device));
+                    }
 
-            // Select the correct single output endpoint
-            let outEndpoint;
-            for (let endpoint of this.device.configuration.interfaces[0].alternate.endpoints) {
-                if (endpoint.direction == 'out') {
-                    outEndpoint = endpoint;
-                    break;
+                    this.resetPrinterButtons();
+                } catch (e) {
+                    console.log("Failed to connect to printer!");
+                    console.log(e);
+                    return;
                 }
             }
 
-            if (!outEndpoint) {
-                console.log("Failed to connect to printer out endpoint!");
-                return;
+            resetPrinterButtons() {
+                this.btnContainer.innerHTML = "";
+                this.#printers.forEach((printer, index) => this.#drawPrinterButton(printer, index));
             }
 
-            // Dump the buffer out, ensuring to clean it in the finally.
-            const buffer = (new TextEncoder()).encode(this.#cmdBuffer);
-            await this.device.transferOut(outEndpoint.endpointNumber, buffer);
-        } catch (e) {
-            console.log(`Print error: ${e.name}: ${e.message}`);
-        } finally {
-            await this.device.close();
-            this.clearCommandBuffer();
-            this.clearOffsets();
-        }
-    }
+            showConfigModal(printer, index) {
+                this.configModal.querySelector('#modalPrinterIndex').value = index;
+                this.configModal.querySelector('#modalPrinterIndexText').textContent = printer.serial;
+                this.configModal.querySelector('#modalLabelWidth').value = printer.labelWidth;
+                this.configModal.querySelector('#modalLabelHeight').value = printer.labelHeight;
+                this.configModal.querySelector('#modalColor').value = printer.labelColor;
+                this.configModal.querySelector('#modalFont').value = printer.fontSize;
+                this.configModalHandle.show();
+            }
 
-    setFont(fontNumber) {
-        fontNumber = Math.trunc(fontNumber) || 1;
+            updatePrinterConfig(e) {
+                e.preventDefault();
+                const form = this.configModal.querySelector("form").elements;
+                let deviceId = form.modalPrinterIndex.value;
+                let printer = this.#printers[deviceId];
 
-        if (fontNumber < 1 || fontNumber > 5) {
-            console.log("Invalid font size! Defaulting to 1");
-            this.#fontNumber = 1;
-            return;
-        }
+                printer.setFont(parseInt(form.modalFont.value));
+                printer.labelColor = form.modalColor.value;
+                printer.labelWidth = (parseFloat(form.modalLabelWidth.value));
+                printer.labelHeight = (parseFloat(form.modalLabelHeight.value));
+                this.configModalHandle.hide();
 
-        this.#fontNumber = fontNumber;
-        return this;
-    }
+                this.activePrinter = deviceId;
+                this.resetPrinterButtons();
+            }
 
-    setOffset(x, y) {
-        this.#xOffset = Math.trunc(x) || 0;
-
-        if (y !== undefined) {
-            this.#yOffset = Math.trunc(y) || 0;
-        }
-        return this;
-    }
-
-    /**
-     * Send the configured label width to the printer
-     */
-    async setLabelWidth() {
-        this.begin();
-        this.addCmd("q" + this.#xLabel);
-        await this.print();
-    }
-
-    /**
-     * Perform an autocalibration for the label length
-     */
-    async setLabelHeightCalibration() {
-        this.begin();
-        this.addCmd("xa");
-        await this.print();
-    }
-
-    /**
-     * Add text, advancing the yOffset by the font height + line spacing.
-     *
-     * @param (string) text - The text to add
-     * @param (int) size - The size to scale the font, 1-6
-     *
-     * @example
-     *     addText("Hello world!", 1)
-     */
-    addText(text, size) {
-        text = text || "";
-        size = Math.trunc(size) || 1;
-
-        this.#addTextRaw(xOffset, this.#yOffset, 0, this.#fontNumber, size, size, false, text);
-
-        let textHeight = (size * this.fontSizes()[this.#fontNumber]["y"]);
-        this.#yOffset += Math.trunc(textHeight + this.lineSpacing);
-
-        return this;
-    }
-
-    /**
-     * Add text centered on the label, advancing the yOffset by the font height + line spacing.
-     *
-     * @param (string) text - The text to add
-     * @param (int) size - The size to scale the font, 1-6
-     *
-     * @example
-     *     addTextCentered("Hello world!", 1)
-     */
-    addTextCentered(text, size) {
-        text = text || "";
-        size = Math.trunc(size) || 1;
-
-        // Width = string length * character width * char size stretch
-        let textWidth = (text.length * size * this.fontSizes()[this.#fontNumber]["x"]);
-        let xOffset = Math.trunc((this.#xLabel - textWidth) / 2);
-
-        this.#addTextRaw(xOffset, this.#yOffset, 0, this.#fontNumber, size, size, false, text);
-
-        let textHeight = (size * this.fontSizes()[this.#fontNumber]["y"]);
-        this.#yOffset += Math.trunc(textHeight + this.lineSpacing);
-
-        return this;
-    }
-
-    /**
-     * Draw a line, starting at the current offset and going for length and height.
-     *
-     * @param (int) length - The horizontal length of the line
-     * @param (int) height - The vertical height of the line
-     * @param (string) drawmode - The mode to draw with, either 'black' (default), 'white', or 'xor'.
-     */
-    addLine(length, height, drawmode) {
-        length = Math.trunc(length) || 0;
-        height = Math.trunc(height) || 0;
-
-        switch (drawmode) {
-            default:
-            case "black":
-                drawmode = "LO";
-                break;
-            case "white":
-                drawmode = "LW";
-                break;
-            case "xor":
-                drawmode = "LE";
-                break;
-        }
-
-        this.addCmd(drawmode + this.#xOffset, this.#yOffset, length, height);
-
-        return this;
-    }
-
-    addBox(length, height, thickness) {
-        length = Math.trunc(length) || 0;
-        height = Math.trunc(height) || 0;
-        thickness = Math.trunc(thickness) || 0;
-
-        this.addCmd("X" + this.#xOffset, this.#yOffset, thickness, length, height);
-        return this;
-    }
-
-    /**
-     * Add command, concatenating given parameters with a comma.
-     *
-     * @param (array) parameters - The command and parameters to add, first element should be the command and the first parameter.
-     *
-     * @example
-     * addCmd("A10", 10, 0, 1, 1, 1, "N", "Hello World!");
-     */
-    addCmd(...parameters){
-        this.#cmdBuffer += parameters.join(',') + "\n";
-        return this;
-    }
-
-    clearCommandBuffer() {
-        this.#cmdBuffer = "";
-        return this;
-    }
-
-    clearOffsets() {
-        this.#xOffset = 0;
-        this.#yOffset = 0;
-        return this;
-    }
-
-    #addTextRaw(xOffset, yOffset, rotation, font, xMultiplier, yMultiplier, reverse, data) {
-        data = this.#cleanString((data || ""));
-        reverseImage = (reverse) ? "R" : "N";
-
-        if (!Number.isInteger(rotation) || rotation < 0 || rotation > 3) {
-            rotation = 0;
-        }
-
-        xMultiplier = ((xMultiplier >= 1 && xMultiplier <= 6) || xMultiplier === 8) ? xMultiplier : 1;
-        yMultiplier = ((yMultiplier >= 1 && yMultiplier <= 9)) ? yMultiplier : 1;
-
-        this.addCmd("A" + xOffset, yOffset, rotation, font, xMultiplier, yMultiplier, reverseImage, "\"" + data + "\"");
-    }
-
-    #cleanString(str) {
-        return str.replace(/\\/gi,"\\\\")
-        .replace(/"/gi,"\\\"")
-        .replace(/[\r\n]+/gi," ");
-    }
-}
-
-let status = document.getElementById('status');
-
-function addPrinterButtons() {
-    let container = document.getElementById("printerlist");
-    container.innerHTML = "";
-    devices.forEach((device, index) => {
-        let epl = new lp2844(2.25, 1.25, device);
-        let element = document.createElement("div");
-        element.style.borderWidth = "1px";
-        element.style.borderColor = "black";
-        element.innerHTML = `
-<div id="printer_${index}" class="row" style="border: 1px solid black;">
-    <div class="col-sm-9">
-        <div class="col-sm-12">
-            <span data-serial="${epl.serial}">${epl.serial}</span>
-        </div>
-        <div class="col-sm-12">
-            <span>${epl.labelWidth} x ${epl.labelHeight}</span>
-        </div>
-    </div>
-    <div class="col-sm-3">
-        <div class="btn-group" role="group" aria-label="Printer button group">
-            <button id="printto_${index}" class="btn btn-success btn-sm" data-label-width="${epl.labelWidth}" data-label-height="${epl.labelHeight}" data-device-id="${index}">🖨</button>
-                <button class="btn btn-primary dropdown-toggle"  data-bs-toggle="dropdown" aria-expanded="false">
-                    <span class="visually-hidden">Settings</span>
-                </button>
-                <ul class="dropdown-menu">
-                    <li><a id="printtest_${index}" data-device-id="${index}" class="dropdown-item" href="#">
-                        Print test page
-                    </a></li>
-                    <li><a id="autosense_${index}" data-device-id="${index}" class="dropdown-item" href="#">
-                        AutoSense length
-                    </a></li>
-                    <li><a id="setlabel_${index}" data-device-id="${index}" class="dropdown-item" href="#">
-                        Set label config
-                    </a></li>
-                </ul>
+            #drawPrinterButton(printer, index) {
+                let highlight = this.#activePrinter == index ? "var(--bs-blue)" : "transparent";
+                let element = document.createElement("div");
+                element.innerHTML = `
+    <li id="printer_${index}" data-device-id="${index}" data-width="${printer.labelWidth}" data-height="${printer.labelHeight}"
+        class="list-group-item d-flex justify-content-between sligh-items-start"
+        style="background: linear-gradient(to left, ${printer.labelColor}, ${highlight}, ${highlight});">
+        <div class="col-sm-8">
+            <div class="col-sm-12">
+                <span data-serial="${printer.serial}">${printer.serial}</span>
+            </div>
+            <div class="col-sm-12">
+                <span>${printer.labelWidth} x ${printer.labelHeight}</span><span> Font: ${printer.fontSize}</span>
             </div>
         </div>
-    </div>
-</div>`;
-        container.appendChild(element);
-        document.getElementById(`printto_${index}`).addEventListener('click', async (e) => {
-            let device = devices[e.target.dataset.deviceId];
-            let epl = new lp2844(
-                e.target.dataset.labelWidth,
-                e.target.dataset.labelHeight,
-                device,
-            );
-            await epl.begin().end().print();
-        });
-        document.getElementById(`autosense_${index}`).addEventListener('click', async (e) => {
-            let device = devices[e.target.dataset.deviceId];
-            let epl = new lp2844(
-                4,
-                4,
-                device,
-            );
-            await epl.setLabelWidth();
-            await epl.setLabelHeightCalibration();
-        });
-        document.getElementById(`printtest_${index}`).addEventListener('click', async (e) => {
-            let device = devices[e.target.dataset.deviceId];
-            let epl = new lp2844(
-                4,
-                4,
-                device,
-            );
-            let quarter = (epl.labelWidthDots) / 4;
-            let lineHeight = 20;
+        <div class="col-sm-4">
+            <div class="btn-group" role="group" aria-label="Printer button group">
+                <button id="printto_${index}" class="btn btn-success btn-lg" data-label-width="${printer.labelWidth}" data-label-height="${printer.labelHeight}" data-device-id="${index}">🖨</button>
+                    <button class="btn btn-success dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false">
+                        <span class="visually-hidden">Settings</span>
+                    </button>
+                    <ul class="dropdown-menu">
+                        <li><a id="printtest_${index}" data-device-id="${index}" class="dropdown-item" href="#">
+                            Print test page
+                        </a></li>
+                        <li><a id="autosense_${index}" data-device-id="${index}" class="dropdown-item" href="#">
+                            AutoSense length
+                        </a></li>
+                        <li><a id="configprinter_${index}" data-device-id="${index}" class="dropdown-item" href="#">
+                            Set label config
+                        </a></li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+    </li>`;
+                this.btnContainer.appendChild(element);
 
-            // Draw a test pattern that looks like
-            // ████████████
-            // ███
-            //    ███
-            //       ███
-            //          ███
-            // ////////////
-            await epl.setLabelWidth();
-            epl.begin()
-                .setOffset(0, lineHeight)
-                .addLine(epl.labelWidthDots, 20)
-                .setOffset(0, lineHeight * 2)
-                .addLine(quarter, 20)
-                .setOffset(quarter, lineHeight * 3)
-                .addLine(quarter, 20)
-                .setOffset(quarter * 2, lineHeight * 4)
-                .addLine(quarter, 20)
-                .setOffset(quarter * 3, lineHeight * 5)
-                .addLine(quarter, 20)
-                .setOffset(0, lineHeight * 6);
+                document.getElementById(`printer_${index}`)
+                    .addEventListener('click', async (e) => {
+                        e.preventDefault();
+                        let deviceId = e.currentTarget.dataset.deviceId;
+                        this.activePrinter = deviceId;
+                        //addPrinterButtons();
+                    });
 
-            let slashStart = lineHeight * 6;
-            let slashHeight = 12;
-            for (let i = 0; i <= epl.labelWidthDots; i += 4) {
-                epl.setOffset(i + 0, slashStart + 0)
-                    .addLine(1, slashHeight)
-                    .setOffset(i + 1, slashStart + slashHeight)
-                    .addLine(1, slashHeight)
-                    .setOffset(i + 2, slashStart + (slashHeight * 2))
-                    .addLine(1, slashHeight)
-                    .setOffset(i + 3, slashStart + (slashHeight * 3))
-                    .addLine(1, slashHeight)
+                document.getElementById(`configprinter_${index}`)
+                    .addEventListener('click', async (e) => {
+                        e.preventDefault();
+                        let deviceId = e.target.dataset.deviceId;
+                        this.showConfigModal(this.#printers[deviceId], deviceId);
+                    });
+
+                document.getElementById(`printto_${index}`)
+                    .addEventListener('click', async (e) => {
+                        e.preventDefault();
+                        let deviceId = e.target.dataset.deviceId;
+                        this.printForm(deviceId);
+                        // await epl.begin().end().print();
+                    });
+
+                document.getElementById(`autosense_${index}`)
+                    .addEventListener('click', async (e) => {
+                        e.preventDefault();
+                        let deviceId = e.target.dataset.deviceId;
+                        await this.#printers[deviceId].configLabelWidth();
+                        await this.#printers[deviceId].setLabelHeightCalibration();
+                    });
+
+                document.getElementById(`printtest_${index}`)
+                    .addEventListener('click', async (e) => {
+                        e.preventDefault();
+                        let deviceId = e.target.dataset.deviceId;
+                        await this.#printers[deviceId].printTestPage();
+                    });
             }
-            epl.end();
-            await epl.print();
+        }
+
+        class lp2844 {
+            #cmdBuffer = "";
+            #fontNumber = "1";
+
+            // LP 2844 has a 203 DPI print head
+            #dpi = 203;
+
+            #labelWidthIn;
+            #xLabel;
+            #labelHeightIn;
+            #yLabel;
+
+            // Temp holders on a per-label basis.
+            #xOffset = 0;
+            #yOffset = 0;
+
+            constructor(labelWidth, labelHeight, device) {
+                this.labelWidth = labelWidth; // inches
+                this.#xLabel = Math.trunc(labelWidth * this.#dpi);
+
+                this.labelHeight = labelHeight; // inches
+                this.#yLabel = Math.trunc(labelHeight * this.#dpi);
+
+                this.device = device; // The USB device to work with
+
+                this.labelColor = "#FFFFFF" // Handy to store, not actually used anywhere
+
+                // Additional spacing between lines of text, in dots.
+                this.lineSpacing = 0;
+            }
+
+            // LP 2844 and variants use this USB vendor ID
+            static get usbVendorId() { return 0x0a5f; }
+
+            // LP 2844 print heads are 203 DPI.
+            get dpi() { return this.#dpi; }
+
+            // TODO: This is unreliable as not all printers tell us their serial
+            // number via USB. We should run the inspect command to get the printer
+            // details and use that as the source of truth for the serial number.
+            get serial() { return this.device.serialNumber; }
+
+            get commandBuffer() { return this.#cmdBuffer; }
+
+            get fontSizes() {
+                return {
+                    // Each character has 2 dots of inter-character space added
+                    // between each character and one dot added for vertical
+                    "1": { "y": 13, "x": 10 },
+                    "2": { "y": 17, "x": 12 },
+                    "3": { "y": 21, "x": 14 },
+                    "4": { "y": 25, "x": 16 },
+                    "5": { "y": 49, "x": 34 }
+                };
+            };
+
+            get labelWidth() { return this.#labelWidthIn; }
+            set labelWidth(value) {
+                this.#labelWidthIn = value;
+                this.#xLabel = Math.trunc(value * this.#dpi);
+            }
+            get labelWidthDots() { return this.#xLabel; }
+
+            get labelHeight() { return this.#labelHeightIn; }
+            set labelHeight(value) {
+                this.#labelHeightIn = value;
+                this.#yLabel = Math.trunc(value * this.#dpi);
+            }
+            get labelHeightDots() { return this.#yLabel; }
+
+            get fontSize() { return this.#fontNumber; }
+
+            /**
+             * Begin a new label. Must be called to start a new label.
+             */
+            begin() {
+                return this.addCmd("\nN");
+            }
+
+            /**
+             * Complete a label. Must be called to print the label.
+             * @param (int) count - The number of labels to print, 1 or higher.
+             */
+            end(count) {
+                count = Math.trunc(count) || 1;
+                count = (count < 1) ? 1 : count;
+
+                return this.addCmd(`P${count}`);
+            }
+
+            /**
+             * Run the commands in the command buffer against the printer, clearing the buffer.
+             */
+            async print() {
+                // Open the device and connect to its interface (there should be 1)
+                //await this.device.open();
+
+                try {
+                    //await this.device.selectConfiguration(1);
+                    //await this.device.claimInterface(0);
+
+                    // Select the correct single output endpoint
+                    let outEndpoint;
+                    for (let endpoint of this.device.configuration.interfaces[0].alternates[0].endpoints) {
+                        if (endpoint.direction == 'out') {
+                            outEndpoint = endpoint;
+                            break;
+                        }
+                    }
+
+                    if (!outEndpoint) {
+                        console.log("Failed to connect to printer out endpoint!");
+                        return;
+                    }
+
+                    // Dump the buffer out, ensuring to clean it in the finally.
+                    const buffer = (new TextEncoder()).encode(this.#cmdBuffer);
+                    await this.device.transferOut(outEndpoint.endpointNumber, buffer);
+                } catch (e) {
+                    console.log(`Print error: ${e.name}: ${e.message}`);
+                } finally {
+                    //await this.device.close();
+                    this.clearCommandBuffer();
+                    this.clearOffsets();
+                }
+            }
+
+            /**
+             * Draw a test pattern that looks like
+             * ████████████
+             * ███
+             *    ███
+             *       ███
+             *          ███
+             * ////////////
+             */
+            async printTestPage() {
+                await this.configLabelWidth();
+
+                let quarter = (this.labelWidthDots / 4);
+                let lineHeight = 20;
+
+                this.begin()
+                    .setOffset(0, lineHeight)
+                    .addLine(this.labelWidthDots, 20)
+                    .setOffset(0, lineHeight * 2)
+                    .addLine(quarter, 20)
+                    .setOffset(quarter, lineHeight * 3)
+                    .addLine(quarter, 20)
+                    .setOffset(quarter * 2, lineHeight * 4)
+                    .addLine(quarter, 20)
+                    .setOffset(quarter * 3, lineHeight * 5)
+                    .addLine(quarter, 20)
+                    .setOffset(0, lineHeight * 6);
+
+                let slashStart = (lineHeight * 6) + 5;
+                let slashHeight = 12;
+                for (let i = 0; i <= this.labelWidthDots; i += 4) {
+                    this.setOffset(i + 0, slashStart + 0)
+                        .addLine(1, slashHeight)
+                        .setOffset(i + 1, slashStart + slashHeight)
+                        .addLine(1, slashHeight)
+                        .setOffset(i + 2, slashStart + (slashHeight * 2))
+                        .addLine(1, slashHeight)
+                        .setOffset(i + 3, slashStart + (slashHeight * 3))
+                        .addLine(1, slashHeight)
+                }
+                this.end();
+                await this.print();
+            }
+
+            setFont(fontNumber) {
+                fontNumber = Math.trunc(fontNumber) || 1;
+
+                if (fontNumber < 1 || fontNumber > 5) {
+                    console.log("Invalid font size! Defaulting to 1");
+                    this.#fontNumber = 1;
+                    return;
+                }
+
+                this.#fontNumber = fontNumber;
+                return this;
+            }
+
+            setOffset(x, y) {
+                this.#xOffset = Math.trunc(x) || 0;
+
+                if (y !== undefined) {
+                    this.#yOffset = Math.trunc(y) || 0;
+                }
+                return this;
+            }
+
+            /**
+             * Send the configured label width to the printer
+             */
+            async configLabelWidth() {
+                this.begin();
+                this.addCmd("q" + this.#xLabel);
+                await this.print();
+            }
+
+            /**
+             * Perform an autocalibration for the label length
+             */
+            async setLabelHeightCalibration() {
+                this.begin();
+                this.addCmd("xa");
+                await this.print();
+            }
+
+            /**
+             * Add text, advancing the yOffset by the font height + line spacing.
+             *
+             * @param (string) text - The text to add
+             * @param (int) size - The size to scale the font, 1-6
+             *
+             * @example
+             *     addText("Hello world!", 1)
+             */
+            addText(text, size) {
+                text = text || "";
+                size = Math.trunc(size) || 1;
+
+                // Font size 5 only supports uppercase letters.
+                if (this.fontSize == 5) {
+                    text = text.toUpperCase();
+                }
+
+                this.#addTextRaw(this.#xOffset, this.#yOffset, 0, this.#fontNumber, size, size, false, text);
+
+                let textHeight = (size * this.fontSizes[this.#fontNumber]["y"]);
+                this.#yOffset += Math.trunc(textHeight + this.lineSpacing);
+
+                return this;
+            }
+
+            /**
+             * Add text centered on the label, advancing the yOffset by the font height + line spacing.
+             *
+             * @param (string) text - The text to add
+             * @param (int) size - The size to scale the font, 1-6
+             *
+             * @example
+             *     addTextCentered("Hello world!", 1)
+             */
+            addTextCentered(text, size) {
+                text = text || "";
+                size = Math.trunc(size) || 1;
+
+                // Width = string length * character width * char size stretch
+                let textWidth = (text.length * size * this.fontSizes[this.#fontNumber]["x"]);
+                let centerOffset = Math.trunc((this.#xLabel - textWidth) / 2);
+
+                this.#addTextRaw(centerOffset, this.#yOffset, 0, this.#fontNumber, size, size, false, text);
+
+                let textHeight = (size * this.fontSizes[this.#fontNumber]["y"]);
+                this.#yOffset += Math.trunc(textHeight + this.lineSpacing);
+
+                return this;
+            }
+
+            /**
+             * Draw a line, starting at the current offset and going for length and height.
+             *
+             * @param (int) length - The horizontal length of the line
+             * @param (int) height - The vertical height of the line
+             * @param (string) drawmode - The mode to draw with, either 'black' (default), 'white', or 'xor'.
+             */
+            addLine(length, height, drawmode) {
+                length = Math.trunc(length) || 0;
+                height = Math.trunc(height) || 0;
+
+                switch (drawmode) {
+                    default:
+                    case "black":
+                        drawmode = "LO";
+                        break;
+                    case "white":
+                        drawmode = "LW";
+                        break;
+                    case "xor":
+                        drawmode = "LE";
+                        break;
+                }
+
+                this.addCmd(drawmode + this.#xOffset, this.#yOffset, length, height);
+
+                return this;
+            }
+
+            addBox(length, height, thickness) {
+                length = Math.trunc(length) || 0;
+                height = Math.trunc(height) || 0;
+                thickness = Math.trunc(thickness) || 0;
+
+                this.addCmd("X" + this.#xOffset, this.#yOffset, thickness, length, height);
+                return this;
+            }
+
+            /**
+             * Add command, concatenating given parameters with a comma.
+             *
+             * @param (array) parameters - The command and parameters to add, first element should be the command and the first parameter.
+             *
+             * @example
+             * addCmd("A10", 10, 0, 1, 1, 1, "N", "Hello World!");
+             */
+            addCmd(...parameters) {
+                this.#cmdBuffer += parameters.join(',') + "\n";
+                return this;
+            }
+
+            clearCommandBuffer() {
+                this.#cmdBuffer = "";
+                return this;
+            }
+
+            clearOffsets() {
+                this.#xOffset = 0;
+                this.#yOffset = 0;
+                return this;
+            }
+
+            #addTextRaw(xOffset, yOffset, rotation, font, xMultiplier, yMultiplier, reverse, data) {
+                data = this.#cleanString((data || ""));
+                let reverseImage = (reverse || false) ? "R" : "N";
+
+                if (!Number.isInteger(rotation) || rotation < 0 || rotation > 3) {
+                    rotation = 0;
+                }
+
+                xMultiplier = ((xMultiplier >= 1 && xMultiplier <= 6) || xMultiplier === 8) ? xMultiplier : 1;
+                yMultiplier = ((yMultiplier >= 1 && yMultiplier <= 9)) ? yMultiplier : 1;
+
+                this.addCmd("A" + xOffset, yOffset, rotation, font, xMultiplier, yMultiplier, reverseImage, "\"" + data + "\"");
+            }
+
+            #cleanString(str) {
+                return str.replace(/\\/gi, "\\\\")
+                    .replace(/"/gi, "\\\"")
+                    .replace(/[\r\n]+/gi, " ");
+            }
+        }
+
+        document.addEventListener('readystatechange', function (event) {
+            if (document.readyState === "complete") {
+
+                const btnContainer = document.getElementById("printerlist");
+                const labelForm = document.getElementById("labelForm");
+                const addPrinterBtn = document.getElementById("addprinter");
+                const modalElement = document.getElementById("printerOptionModal");
+                const printerMgr = new PrinterManager(lp2844, btnContainer, labelForm, addPrinterBtn, modalElement);
+
+                printerMgr.defaultLabelHeight = 6;
+                printerMgr.defaultLabelWidth = 4;
+
+                printerMgr.printerReloadAll();
+            }
         });
-    });
-}
-
-navigator.usb.getDevices().then((printers) => {
-    devices = printers;
-    addPrinterButtons();
-});
-
-navigator.usb.addEventListener('connect', (e) => {
-    if (!devices.includes(e.device)) {
-        devices.push(e.device);
-    }
-
-    addPrinterButtons();
-});
-
-navigator.usb.addEventListener('disconnect', (e) => {
-    const idx = devices.findIndex(i => e.device == i);
-    if (idx > -1) {
-        devices.splice(idx, 1);
-    }
-    addPrinterButtons();
-});
-
-document.getElementById('addprinter').addEventListener('click', async () => {
-    let device;
-    try {
-        device = await navigator.usb.requestDevice({ filters: [
-            { vendorId: lp2844.usbVendorId }
-        ]});
-    } catch (e) {
-        console.log("Failed to connect to printer!");
-        return;
-    }
-
-    if (!devices.includes(device)) {
-        devices.push(device);
-    }
-
-    addPrinterButtons();
-});
-
-</script>
-<script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.10.2/dist/umd/popper.min.js" integrity="sha384-7+zCNj/IqJ95wo16oMtfsKbZ9ccEh31eOz1HGyDuCQ6wgnyJNSYdrPa03rtR1zdB" crossorigin="anonymous"></script>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.min.js" integrity="sha384-QJHtvGhmr9XOIpI6YVutG+2QOK9T+ZnN4kzFN1RtK3zEFEIsxhlmWl5/YESvpZ13" crossorigin="anonymous"></script>
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.10.2/dist/umd/popper.min.js"
+        integrity="sha384-7+zCNj/IqJ95wo16oMtfsKbZ9ccEh31eOz1HGyDuCQ6wgnyJNSYdrPa03rtR1zdB"
+        crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.min.js"
+        integrity="sha384-QJHtvGhmr9XOIpI6YVutG+2QOK9T+ZnN4kzFN1RtK3zEFEIsxhlmWl5/YESvpZ13"
+        crossorigin="anonymous"></script>
 </body>
+
 </html>
