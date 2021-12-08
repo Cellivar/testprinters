@@ -92,6 +92,45 @@
                                 </div>
                             </div>
                         </div>
+                        <div class="mb-3">
+                            <div class="row">
+                                <div class="col row mb-3">
+                                    <label for="modalDarkness" class="col-sm-6 col-form-label">Darkness</label>
+                                    <div class="col-sm-6">
+                                        <div class="col-sm-7">
+                                            <select id="modalDarkness" class="form-select" aria-label="Darkness">
+                                                <option>1</option>
+                                                <option>2</option>
+                                                <option>3</option>
+                                                <option>4</option>
+                                                <option>5</option>
+                                                <option>6</option>
+                                                <option>7</option>
+                                                <option>8</option>
+                                                <option>9</option>
+                                                <option>10</option>
+                                                <option>11</option>
+                                                <option>12</option>
+                                                <option>13</option>
+                                                <option>14</option>
+                                                <option>15</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="col row mb-3">
+                                    <label for="modalSpeed" class="col-sm-5 col-form-label">Speed</label>
+                                    <div class="col-sm-7">
+                                        <select id="modalSpeed" class="form-select" aria-label="Speed">
+                                            <option>1</option>
+                                            <option>2</option>
+                                            <option>3</option>
+                                            <option>4</option>
+                                        </select>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                     <div class="modal-footer">
                         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
@@ -128,11 +167,13 @@
 
                 this.configModal = configModal;
                 this.configModalHandle = new bootstrap.Modal(this.configModal);
-                this.configModal.querySelector('form').addEventListener('submit', (e) => this.updatePrinterConfig(e));
+                this.configModal.querySelector('form').addEventListener('submit', async (e) => await this.updatePrinterConfig(e));
 
                 navigator.usb.addEventListener('connect', async (e) => this.printerConnect(e));
                 navigator.usb.addEventListener('disconnect', async (e) => this.printerDisconnect(e));
             }
+
+            get printers() { return this.#printers; }
 
             get activePrinter() { return this.#activePrinter; }
             set activePrinter(value) {
@@ -234,10 +275,12 @@
                 this.configModal.querySelector('#modalLabelHeight').value = printer.labelHeight;
                 this.configModal.querySelector('#modalColor').value = printer.labelColor;
                 this.configModal.querySelector('#modalFont').value = printer.fontSize;
+                this.configModal.querySelector('#modalDarkness').value = printer.density;
+                this.configModal.querySelector('#modalSpeed').value = printer.speed;
                 this.configModalHandle.show();
             }
 
-            updatePrinterConfig(e) {
+            async updatePrinterConfig(e) {
                 e.preventDefault();
                 const form = this.configModal.querySelector("form").elements;
                 let deviceId = form.modalPrinterIndex.value;
@@ -248,6 +291,10 @@
                 printer.labelWidth = (parseFloat(form.modalLabelWidth.value));
                 printer.labelHeight = (parseFloat(form.modalLabelHeight.value));
                 this.configModalHandle.hide();
+
+                await printer.configDensity(form.modalDarkness.value);
+                await printer.configSpeed(form.modalSpeed.value);
+                await printer.configLabelWidth();
 
                 this.activePrinter = deviceId;
                 this.resetPrinterButtons();
@@ -333,7 +380,11 @@
 
         class lp2844 {
             #cmdBuffer = "";
+            #device;
+
             #fontNumber = "1";
+            #speed = 4;
+            #density = 8;
 
             // LP 2844 has a 203 DPI print head
             #dpi = 203;
@@ -349,12 +400,8 @@
 
             constructor(labelWidth, labelHeight, device) {
                 this.labelWidth = labelWidth; // inches
-                this.#xLabel = Math.trunc(labelWidth * this.#dpi);
-
                 this.labelHeight = labelHeight; // inches
-                this.#yLabel = Math.trunc(labelHeight * this.#dpi);
-
-                this.device = device; // The USB device to work with
+                this.#device = device; // The USB device to work with
 
                 this.labelColor = "#FFFFFF" // Handy to store, not actually used anywhere
 
@@ -371,7 +418,7 @@
             // TODO: This is unreliable as not all printers tell us their serial
             // number via USB. We should run the inspect command to get the printer
             // details and use that as the source of truth for the serial number.
-            get serial() { return this.device.serialNumber; }
+            get serial() { return this.#device.serialNumber; }
 
             get commandBuffer() { return this.#cmdBuffer; }
 
@@ -402,6 +449,8 @@
             get labelHeightDots() { return this.#yLabel; }
 
             get fontSize() { return this.#fontNumber; }
+            get speed() { return this.#speed; }
+            get density() { return this.#density; }
 
             /**
              * Begin a new label. Must be called to start a new label.
@@ -434,7 +483,7 @@
 
                     // Select the correct single output endpoint
                     let outEndpoint;
-                    for (let endpoint of this.device.configuration.interfaces[0].alternates[0].endpoints) {
+                    for (let endpoint of this.#device.configuration.interfaces[0].alternates[0].endpoints) {
                         if (endpoint.direction == 'out') {
                             outEndpoint = endpoint;
                             break;
@@ -448,7 +497,7 @@
 
                     // Dump the buffer out, ensuring to clean it in the finally.
                     const buffer = (new TextEncoder()).encode(this.#cmdBuffer);
-                    await this.device.transferOut(outEndpoint.endpointNumber, buffer);
+                    await this.#device.transferOut(outEndpoint.endpointNumber, buffer);
                 } catch (e) {
                     console.log(`Print error: ${e.name}: ${e.message}`);
                 } finally {
@@ -539,6 +588,34 @@
             async setLabelHeightCalibration() {
                 this.begin();
                 this.addCmd("xa");
+                await this.print();
+            }
+
+            /**
+             * Configure the density (darkness) of the print.
+             *
+             * @param (int) density - 0 (light) through 15 (dark) print density.
+             */
+            async configDensity(density) {
+                density = parseInt(density) || 8;
+                density = (density < 0 || density > 15) ? 8 : density;
+
+                this.begin();
+                this.addCmd("D" + density);
+                await this.print();
+            }
+
+            /**
+             * Configure the speed of the print.
+             *
+             * @param (int) speed - 1 (slow) to 4 (fast) print speed.
+             */
+            async configSpeed(speed) {
+                speed = parseInt(speed) || 4;
+                speed = (speed < 1 || speed > 4) ? 4 : speed;
+
+                this.begin();
+                this.addCmd("S" + speed);
                 await this.print();
             }
 
@@ -676,6 +753,8 @@
             }
         }
 
+        var printerMgr;
+
         document.addEventListener('readystatechange', function (event) {
             if (document.readyState === "complete") {
 
@@ -683,7 +762,7 @@
                 const labelForm = document.getElementById("labelForm");
                 const addPrinterBtn = document.getElementById("addprinter");
                 const modalElement = document.getElementById("printerOptionModal");
-                const printerMgr = new PrinterManager(lp2844, btnContainer, labelForm, addPrinterBtn, modalElement);
+                printerMgr = new PrinterManager(lp2844, btnContainer, labelForm, addPrinterBtn, modalElement);
 
                 printerMgr.defaultLabelHeight = 6;
                 printerMgr.defaultLabelWidth = 4;

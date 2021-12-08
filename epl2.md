@@ -201,14 +201,14 @@ Example:
 
 Set the printable width of the label, in dots.
 
-`q width`
+`q width↵`
 
 Note: This command will automatically set the left margin and update the reference
 point accordingly. It will then reformat the image buffer.
 
 Example:
 
-* `q406` - Set the printable area for a 2 inch wide label
+* `q406↵` - Set the printable area for a 2 inch wide label
 
 * Q Set Form Length
 * R Set Reference Point Stored 143
@@ -221,8 +221,53 @@ Example:
 ### Printer configuration
 
 * U Print Configuration — 148
-* D Density Stored 88
-* S Speed Select Stored 144
+
+#### U Print Configuration  148
+
+Print the configuration onto a label.
+
+`U↵`
+
+Example:
+
+* `U↵` - Print the current configuration onto a label.
+
+#### D Density  88
+
+Set the print density (darkness).
+
+Note: This controls the temperature of the print head. Higher temperatures can lead to distorted images, sticking of the label to the print head, and decreased head lifetime. **You should use the lowest necessary print density for your labels to get a good image.**
+
+`D density↵`
+
+* density - 0-15 where 0 is the lightest and 15 is the darkest. Usually 8 is fine.
+
+Example:
+
+* `D8↵` - Set print density to 8.
+
+#### S Speed Select  144
+
+Set the print speed
+
+`S speed↵`
+
+The speed table for other printer models should be consulted in the EPL manual.
+
+For the LP2824 and 2844 the settings are
+
+* 1 - 1.5 inches per second
+* 2 - 2.0 inches per second
+* 3 - 2.5 inches per second
+* 4 - 3.5 inches per second
+
+Note: The faster the print speed the lighter the image. Speed and density should be balanced for a good produced image.
+
+Example:
+
+* `S4↵` - Set the speed to 3.5 inches per second
+
+
 * dump Enable Dump Mode — 89
 * M Memory Allocation Writes 121
 * o Cancel Software Options Writes 123
