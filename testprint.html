@@ -198,19 +198,6 @@
                 await printer.print();
             }
 
-            async printerReloadAll() {
-                this.#devices = [];
-                this.#printers = []; // TODO: Dispose all printers first.
-                navigator.usb.getDevices().then((printers) => {
-                    printers.forEach(d => {
-                        this.#devices.push(d);
-                        this.#printers.push(new this.#printerType(this.defaultLabelWidth, this.defaultLabelHeight, d));
-                    });
-
-                    this.resetPrinterButtons();
-                });
-            }
-
             async printerConnect(e) {
                 if (!this.#devices.includes(e.device)) {
                     this.#devices.push(e.device);
@@ -235,11 +222,11 @@
             async printerDisconnect(e) {
                 const idx = this.#devices.findIndex(i => e.device == i);
                 if (idx > -1) {
+                    this.#printers[idx].dispose();
                     this.#devices.splice(idx, 1);
                     this.#printers.splice(idx, 1);
+                    this.resetPrinterButtons();
                 }
-
-                this.resetPrinterButtons();
             }
 
             async printerPair(e) {
@@ -250,17 +237,26 @@
                         ]
                     });
 
-                    if (!this.#devices.includes(device)) {
-                        this.#devices.push(device);
-                        this.#printers.push(new this.#printerType(this.defaultLabelWidth, this.defaultLabelHeight, device));
-                    }
-
-                    this.resetPrinterButtons();
+                    await this.printerConnect( { device : device} )
                 } catch (e) {
                     console.log("Failed to connect to printer!");
                     console.log(e);
                     return;
                 }
+            }
+
+            async printerReloadAll() {
+                this.#devices = [];
+                this.#printers.forEach(p => p.dispose());
+                this.#printers = [];
+
+                navigator.usb.getDevices().then((printers) => {
+                    printers.forEach(async d => {
+                        await this.printerConnect( { device : d });
+                    });
+
+                    this.resetPrinterButtons();
+                });
             }
 
             resetPrinterButtons() {
@@ -461,6 +457,7 @@
 
             /**
              * Complete a label. Must be called to print the label.
+             *
              * @param (int) count - The number of labels to print, 1 or higher.
              */
             end(count) {
@@ -501,10 +498,24 @@
                 } catch (e) {
                     console.log(`Print error: ${e.name}: ${e.message}`);
                 } finally {
-                    //await this.device.close();
                     this.clearCommandBuffer();
                     this.clearOffsets();
                 }
+            }
+
+            /**
+             * Connect to the printer's input and output interfaces.
+             */
+            async #connect() {
+
+            }
+
+            /**
+             * Disconnect from the printer. Further commands will fail. Create a
+             * new instance instead of trying to re-use this one after disposal.
+             */
+            async dispose() {
+                await this.device.close();
             }
 
             /**
