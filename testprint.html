@@ -251,8 +251,8 @@
                     });
 
                     if (!this.#devices.includes(device)) {
-                        this.$devices.push(device);
-                        this.$printers.push(new this.#printerType(this.defaultLabelWidth, this.defaultLabelHeight, device));
+                        this.#devices.push(device);
+                        this.#printers.push(new this.#printerType(this.defaultLabelWidth, this.defaultLabelHeight, device));
                     }
 
                     this.resetPrinterButtons();
@@ -312,7 +312,7 @@
                 <span data-serial="${printer.serial}">${printer.serial}</span>
             </div>
             <div class="col-sm-12">
-                <span>${printer.labelWidth} x ${printer.labelHeight}</span><span> Font: ${printer.fontSize}</span>
+                <span>${printer.labelWidth}" x ${printer.labelHeight}"</span><span> Font: ${printer.fontSize}</span>
             </div>
         </div>
         <div class="col-sm-4">
@@ -577,18 +577,14 @@
              * Send the configured label width to the printer
              */
             async configLabelWidth() {
-                this.begin();
-                this.addCmd("q" + this.#xLabel);
-                await this.print();
+                await this.begin().addCmd("q" + this.#xLabel).print();
             }
 
             /**
              * Perform an autocalibration for the label length
              */
             async setLabelHeightCalibration() {
-                this.begin();
-                this.addCmd("xa");
-                await this.print();
+                await this.begin().addCmd("xa").print();
             }
 
             /**
@@ -600,9 +596,14 @@
                 density = parseInt(density) || 8;
                 density = (density < 0 || density > 15) ? 8 : density;
 
-                this.begin();
-                this.addCmd("D" + density);
-                await this.print();
+                await this.begin().addCmd("D" + density).print();
+            }
+
+            /**
+             * Reset the printer, same as turning it off and on.
+             */
+            async configReset(){
+                await this.begin().addCmd("^@").print();
             }
 
             /**
@@ -614,9 +615,7 @@
                 speed = parseInt(speed) || 4;
                 speed = (speed < 1 || speed > 4) ? 4 : speed;
 
-                this.begin();
-                this.addCmd("S" + speed);
-                await this.print();
+                await this.begin().addCmd("S" + speed).print();
             }
 
             /**
