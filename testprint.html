@@ -201,20 +201,10 @@
             async printerConnect(e) {
                 if (!this.#devices.includes(e.device)) {
                     this.#devices.push(e.device);
-                    this.#printers.push(new this.#printerType(this.defaultLabelWidth, this.defaultLabelHeight, e.device));
+                    let printer = new this.#printerType(this.defaultLabelWidth, this.defaultLabelHeight, e.device);
+                    await printer.connect();
+                    this.#printers.push(printer);
                 }
-
-                const listen = async () => {
-                    await e.device.open();
-                    await e.device.selectConfiguration(1);
-                    await e.device.claimInterface(0);
-                    while (true) {
-                        const result = await e.device.transferIn(5, 64);
-                        console.log("PRINTER:\n" + (new TextDecoder()).decode(result.data));
-                    }
-                }
-
-                listen();
 
                 this.resetPrinterButtons();
             }
@@ -377,6 +367,12 @@
         class lp2844 {
             #cmdBuffer = "";
             #device;
+            #deviceOut;
+            #deviceIn;
+            #serialNumber;
+            #modelNumber;
+            #firmware;
+            #doubleBuffering;
 
             #fontNumber = "1";
             #speed = 4;
@@ -389,6 +385,8 @@
             #xLabel;
             #labelHeightIn;
             #yLabel;
+            #labelGapIn;
+            #gLabel;
 
             // Temp holders on a per-label basis.
             #xOffset = 0;
@@ -414,7 +412,7 @@
             // TODO: This is unreliable as not all printers tell us their serial
             // number via USB. We should run the inspect command to get the printer
             // details and use that as the source of truth for the serial number.
-            get serial() { return this.#device.serialNumber; }
+            get serial() { return this.#serialNumber; }
 
             get commandBuffer() { return this.#cmdBuffer; }
 
@@ -471,32 +469,11 @@
              * Run the commands in the command buffer against the printer, clearing the buffer.
              */
             async print() {
-                // Open the device and connect to its interface (there should be 1)
-                //await this.device.open();
-
                 try {
-                    //await this.device.selectConfiguration(1);
-                    //await this.device.claimInterface(0);
-
-                    // Select the correct single output endpoint
-                    let outEndpoint;
-                    for (let endpoint of this.#device.configuration.interfaces[0].alternates[0].endpoints) {
-                        if (endpoint.direction == 'out') {
-                            outEndpoint = endpoint;
-                            break;
-                        }
-                    }
-
-                    if (!outEndpoint) {
-                        console.log("Failed to connect to printer out endpoint!");
-                        return;
-                    }
-
-                    // Dump the buffer out, ensuring to clean it in the finally.
                     const buffer = (new TextEncoder()).encode(this.#cmdBuffer);
-                    await this.#device.transferOut(outEndpoint.endpointNumber, buffer);
+                    await this.#device.transferOut(this.#deviceOut.endpointNumber, buffer);
                 } catch (e) {
-                    console.log(`Print error: ${e.name}: ${e.message}`);
+                    console.error(`Print error: ${e.name}: ${e.message}`);
                 } finally {
                     this.clearCommandBuffer();
                     this.clearOffsets();
@@ -504,10 +481,181 @@
             }
 
             /**
-             * Connect to the printer's input and output interfaces.
+             * Set up the printer connection. Must be done before calling any
+             * other methods.
              */
-            async #connect() {
+            async connect(debugByLoggingPrinterToConsole) {
+                const d = this.#device;
 
+                // Each printer will have one input and one output interface
+                // Go find them.
+                let o, i;
+                for (let endpoint of d.configuration.interfaces[0].alternates[0].endpoints) {
+                    if (endpoint.direction == 'out') {
+                        o = endpoint;
+                    } else if (endpoint.direction == 'in') {
+                        i = endpoint;
+                    }
+                }
+
+                if (!o || !i) {
+                    console.error("Failed to connect input or output to printer!");
+                }
+
+                this.#deviceOut = o;
+                this.#deviceIn = i;
+
+                // And wire 'em up!
+                await d.open();
+                await d.selectConfiguration(1);
+                await d.claimInterface(0);
+
+                // Test the connection by pulling the current configuration.
+                await this.configGetFromPrinter();
+
+                if (debugByLoggingPrinterToConsole) {
+                    // Whatever messages arrive will be dumped straight to the
+                    // console. Note that this eats up the incoming data so
+                    // other listening commands won't work while this is active.
+                    this.#listenForDataAndConsoleLogAlways();
+                }
+            }
+
+            /**
+             * Get the current configuration from the printer, overwriting any
+             * uncommitted configuration changes.
+             */
+            async configGetFromPrinter() {
+                // Start listening for the response we're about to generate
+                let listenResult = this.#listenForData();
+
+                this.begin().addCmd("UQ").print();
+
+                let rawText = await listenResult;
+                let config = this.#parseConfigInquiry(rawText);
+
+                this.#density = config.density;
+                this.#doubleBuffering = config.doubleBuffering;
+                this.#speed = config.speed;
+                this.#serialNumber = config.serial;
+                this.#firmware = config.firmware;
+                this.#xLabel = config.labelWidthDots - 7;
+                this.#yLabel = config.labelHeightDots - 5;
+                this.#gLabel = config.labelGapDots;
+
+                this.labelWidth = this.#xLabel / this.#dpi;
+                this.labelHeight = this.#yLabel / this.#dpi;
+            }
+
+            #parseConfigInquiry(rawText) {
+                rawText = rawText.replaceAll('\r', '');
+                console.log(rawText);
+                const lines = rawText.split('\n').filter(i => i);
+
+                // UKQ1935HLU     V4.29    # ID code and firmware version
+                // First line determines firmware version to read and is consistent
+                // across observed dumps.
+                const header = lines[0].split(' ').filter(i => i);
+                // First element is always the model ID
+                const modelId = header[0];
+                // Header may include "FDX", indicating a nonstandard unit.
+                // We ignore this and jump to the last element, which will be
+                // the firmware version
+                const firmware = header[header.length - 1];
+
+                let result = {
+                    model: modelId,
+                    firmware: firmware,
+                    serial: "not_reported"
+                };
+
+                // All the rest of these follow some kind of standard pattern for
+                // each value which we can pick up with regex. The cases here are
+                // built out of observed configuration dumps.
+                for (let i = 1; i < lines.length; i++) {
+                    let str = lines[i]
+                    switch (true) {
+                        case /^S\/N.*/.test(str):
+                            // S/N: 42A000000000       # Serial number
+                            result.serial = str.substring(5).trim();
+                            break;
+                        case /^Serial\sport/.test(str):
+                            // Serial port:96,N,8,1    # Serial port config
+                            result.serialPort = str.substring(12).trim();
+                            break;
+                        case /^q\d+\sQ/.test(str):
+                            // q600 Q208,25            # Form width (q) and length (Q). See those commands.
+                            let settingsForm = str.trim().split(' ');
+                            let length = settingsForm[1].split(',');
+                            result.labelWidthDots = parseInt(settingsForm[0].substring(1));
+                            result.labelHeightDots = parseInt(length[0].substring(1));
+                            result.labelGapDots = parseInt(length[1].trim());
+                            break;
+                        case /^S\d\sD\d\d\sR/.test(str):
+                            // S4 D08 R112,000 ZB UN   # Config settings 2
+                            let settings2 = str.trim().split(' ');
+                            let ref = settings2[2].split(',');
+                            result.speed = parseInt(settings2[0].substring(1));
+                            result.density = parseInt(settings2[1].substring(1));
+                            result.xRef = parseInt(ref[0].substring(1));
+                            result.yRef = parseInt(ref[1]);
+                            break;
+                        case /^I\d,.,\d\d\d\sr[YN]/.test(str):
+                            // I8,A,001 rY JF WY       # Config settings 1
+                            let settings1 = str.split(' ');
+                            result.doubleBuffering = settings1[1][1] === 'Y'
+                            break;
+                        case /^\d\d\s\d\d\s\d\d\s$/.test(str):
+                            // 06 10 14                # AutoSense settings, see below
+                        case /^oE.,/.test(str):
+                            // oEv,w,x,y,z             # Config settings 4, see below
+                        case /^Option:/.test(str):
+                            // Option:D,Ff             # Config settings 3, see below
+                        case /^Emem:/.test(str):
+                            // Emem:031K,0037K avl     # Soft font storage
+                        case /^Gmem:/.test(str):
+                            // Gmem:000K,0037K avl     # Graphics storage
+                        case /^Fmem:/.test(str):
+                            // Fmem:000.0K,060.9K avl  # Form storage
+                        case /^Image buffer size:/.test(str):
+                            // Image buffer size:0245K # Image buffer size in use
+                            // These are status details and are uninteresting, so we skip them.
+                            break;
+                        default:
+                            console.log("Unhandled config line '" + str + "', consider reporting a bug!");
+                            break;
+                    }
+                }
+
+                return result;
+            }
+
+            async #listenForDataAndConsoleLogAlways() {
+                while (true) {
+                    let aggregate = "";
+                    let text = "";
+                    let readLength = 64;
+                    do {
+                        let result = await this.#device.transferIn(this.#deviceIn.endpointNumber, readLength)
+                        text = (new TextDecoder()).decode(result.data);
+                        aggregate += text.replaceAll("\n", "^");
+                    } while (text.length == readLength && !text.endsWith('\n'))
+
+                    console.log("PRINTER SAYS\n>" + aggregate + "<");
+                }
+            }
+
+            async #listenForData() {
+                let aggregate = "";
+                let text = "";
+                let readLength = 64;
+                do {
+                    let result = await this.#device.transferIn(this.#deviceIn.endpointNumber, readLength)
+                    text = (new TextDecoder()).decode(result.data);
+                    aggregate += text;
+                } while (text.length == 64 && !text.endsWith('\n')) // Probably more to read.
+
+                return aggregate;
             }
 
             /**
