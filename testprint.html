@@ -615,8 +615,18 @@
                             // Emem:031K,0037K avl     # Soft font storage
                         case /^Gmem:/.test(str):
                             // Gmem:000K,0037K avl     # Graphics storage
-                        case /^Fmem:/.test(str):
+                        case /^Fmem used:/.test(str):
                             // Fmem:000.0K,060.9K avl  # Form storage
+                        case /^Emem used:/.test(str):
+                            // Emem used: 0     # Soft font storage
+                        case /^Gmem used:/.test(str):
+                            // Gmem used: 0            # Graphics storage
+                        case /^Fmem used:/.test(str):
+                            // Fmem used: 0 (bytes)    # Form storage
+                        case /^Available:/.test(str):
+                            // Available: 130559       # Total memory for Forms, Fonts, or Graphics
+                        case /^Available:/.test(str):
+                            // Cover: T=118, C=129     # (T)reshold and (C)urrent Head Up (open) sensor.
                         case /^Image buffer size:/.test(str):
                             // Image buffer size:0245K # Image buffer size in use
                             // These are status details and are uninteresting, so we skip them.
