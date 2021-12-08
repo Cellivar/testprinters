@@ -548,9 +548,10 @@
             }
 
             #parseConfigInquiry(rawText) {
-                rawText = rawText.replaceAll('\r', '');
-                console.log(rawText);
-                const lines = rawText.split('\n').filter(i => i);
+                const lines = rawText
+                    .replaceAll('\r', '')
+                    .split('\n')
+                    .filter(i => i);
 
                 // UKQ1935HLU     V4.29    # ID code and firmware version
                 // First line determines firmware version to read and is consistent
