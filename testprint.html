@@ -16,7 +16,7 @@
 
 <body>
     <div class="container-fluid">
-        <div class="row">
+        <div class="row" style="padding-top: 16px;">
             <div class="col-3">
                 <div class="d-grid gap-2 col-8 mx-auto mb-3">
                     <button class="btn btn-primary" id="addprinter">➕ Add Printer</button>
@@ -25,20 +25,23 @@
                 </ol>
             </div>
             <div class="col-9">
-                <form id="labelForm">
+                <form id="labelForm" action="javascript:void(0);">
                     <div class="col row mb-3">
-                        <label for="modalFont" class="col-sm-1 col-form-label">Font</label>
+                        <label for="leftOffset" class="col-sm-2 col-form-label">Left Margin</label>
                         <div class="col-sm-2">
-                            <select id="modalFont" class="form-select" aria-label="Font selection">
+                            <input class="form-control" type="number" id="leftOffset" value="10" name="leftOffset">
+                        </div>
+                        <label for="modalFont" class="col-sm-1 offset-sm-2 col-form-label">Font</label>
+                        <div class="col-sm-1">
+                            <select id="modalFont" class="form-select" aria-label="Font selection" name="fontSize">
                                 <option>1</option>
                                 <option>2</option>
                                 <option>3</option>
                                 <option>4</option>
-                                <option>5</option>
+                                <option selected>5</option>
                             </select>
                         </div>
                     </div>
-                    <!-- Things to print! -->
                     <textarea id="labelFormText" name="labelText" maxlength="25" cols="25" rows="25" wrap="hard"
                         style="resize: none; font-family: monospace; font-size: 18px; overflow-y: scroll; overflow-x: hidden;"
                         placeholder="Enter your label text here!"></textarea>
@@ -167,12 +170,14 @@
             constructor(printerType, btnContainer, labelForm, addPrinterBtn, configModal) {
                 this.#printerType = printerType;
 
-                this.defaultLabelWidth = 4;
-                this.defaultLabelHeight = 6;
-
                 this.btnContainer = btnContainer;
                 this.labelForm = labelForm;
                 this.labelTextarea = this.labelForm.querySelector('textarea');
+                this.labelTextarea.addEventListener('keyup', () => this.#limitTextArea());
+                this.labelTextarea.addEventListener('change', () => this.#limitTextArea());
+                this.labelForm.querySelector('#leftOffset').addEventListener('change', () => this.#resizeTextArea());
+                this.labelForm.querySelector('#leftOffset').addEventListener('keyup', () => this.#resizeTextArea());
+                this.labelForm.querySelector('#modalFont').addEventListener('change', () => this.#resizeTextArea());
 
                 this.addPrinterBtn = addPrinterBtn;
                 addPrinterBtn.addEventListener('click', async (e) => this.printerPair(e));
@@ -190,21 +195,17 @@
             get activePrinter() { return this.#activePrinter; }
             set activePrinter(value) {
                 this.#activePrinter = value;
-                let printer = this.#printers[this.#activePrinter];
-
-                let font = printer.fontSizes[printer.fontSize];
-                let cols = Math.floor(printer.labelWidthDots / font.x);
-                let rows = Math.floor(printer.labelHeightDots / font.y);
-                this.labelTextarea.cols = cols;
-                this.labelTextarea.rows = rows;
-                this.labelTextarea.maxLength = rows * cols;
+                this.#resizeTextArea();
             }
 
             async printForm(printerId) {
-                let rawText = (new FormData(this.labelForm)).get('labelText').replaceAll("\r", "");
+                let form = new FormData(this.labelForm);
+                let rawText = form.get('labelText').replaceAll("\r", "");
+                let fontSize = parseInt(form.get('fontSize'));
+                let xOffset = parseInt(form.get('leftOffset'));
                 let printer = this.#printers[printerId];
 
-                printer.begin().setOffset(5, 0);
+                printer.begin().setOffset(xOffset, 0).setFont(fontSize);
                 rawText.split("\n").forEach(l => printer.addText(l));
                 printer.end();
                 await printer.print();
@@ -219,6 +220,7 @@
                 }
 
                 this.resetPrinterButtons();
+                this.#resizeTextArea();
             }
 
             async printerDisconnect(e) {
@@ -258,7 +260,48 @@
                     });
 
                     this.resetPrinterButtons();
+                    this.activePrinter = 0;
+                    this.#resizeTextArea();
                 });
+            }
+
+            #limitTextArea() {
+                const maxLines = this.labelTextarea.rows;
+                var currentLinesRendered = (new FormData(this.labelForm)).get('labelText').split('\n');
+
+                while (currentLinesRendered.length > maxLines) {
+                    this.labelTextarea.value = this.labelTextarea.value.slice(0, -1);
+                    currentLinesRendered = (new FormData(this.labelForm)).get('labelText').split('\n');
+                }
+
+                // if ((currentLines.length >= maxLines) || (currentLinesRendered >= maxLines)) {
+                //     let lines = currentLines.slice(0, maxLines);
+                //     this.labelTextarea.value = lines.join('\n');
+                // }
+            }
+
+            #resizeTextArea() {
+                let p = this.#printers[this.activePrinter];
+                if (!p) {
+                    return;
+                }
+
+                let form = new FormData(this.labelForm);
+                let fontSize = parseInt(form.get('fontSize'));
+                let xOffset = parseInt(form.get('leftOffset'));
+                xOffset = xOffset >= p.labelWidthDots ? p.labelWidthDots - 1 : xOffset;
+
+                let font = p.fontSizes[fontSize];
+                let cols = Math.floor((p.labelWidthDots - xOffset) / font.x);
+                cols = cols < 1 ? 1 : cols;
+                let rows = Math.floor(p.labelHeightDots / font.y);
+                rows = rows < 1 ? 1 : rows;
+
+                this.labelTextarea.cols = cols;
+                this.labelTextarea.rows = rows;
+                this.labelTextarea.maxLength = rows * cols;
+
+                this.#limitTextArea();
             }
 
             resetPrinterButtons() {
@@ -283,7 +326,6 @@
                 let deviceId = form.modalPrinterIndex.value;
                 let printer = this.#printers[deviceId];
 
-                printer.setFont(parseInt(form.modalFont.value));
                 printer.labelColor = form.modalColor.value;
                 printer.labelWidth = (parseFloat(form.modalLabelWidth.value));
                 printer.labelHeight = (parseFloat(form.modalLabelHeight.value));
@@ -295,6 +337,14 @@
 
                 this.activePrinter = deviceId;
                 this.resetPrinterButtons();
+            }
+
+            #drawPrinterButtonHighlights() {
+                this.#printers.forEach((printer, index) => {
+                    let element = document.getElementById(`printer_${index}`);
+                    let highlight = this.#activePrinter == index ? "var(--bs-blue)" : "transparent";
+                    element.style.background = `linear-gradient(to right, ${highlight}, ${highlight}, ${printer.labelColor}, ${printer.labelColor})`;
+                });
             }
 
             #drawPrinterButton(printer, index) {
@@ -340,7 +390,7 @@
                         e.preventDefault();
                         let deviceId = e.currentTarget.dataset.deviceId;
                         this.activePrinter = deviceId;
-                        //addPrinterButtons();
+                        this.#drawPrinterButtonHighlights();
                     });
 
                 document.getElementById(`configprinter_${index}`)
@@ -355,7 +405,6 @@
                         e.preventDefault();
                         let deviceId = e.target.dataset.deviceId;
                         this.printForm(deviceId);
-                        // await epl.begin().end().print();
                     });
 
                 document.getElementById(`autosense_${index}`)
@@ -979,9 +1028,6 @@
                 const addPrinterBtn = document.getElementById("addprinter");
                 const modalElement = document.getElementById("printerOptionModal");
                 printerMgr = new PrinterManager(lp2844, btnContainer, labelForm, addPrinterBtn, modalElement);
-
-                printerMgr.defaultLabelHeight = 6;
-                printerMgr.defaultLabelWidth = 4;
 
                 printerMgr.printerReloadAll();
             }
