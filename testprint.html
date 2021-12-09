@@ -529,7 +529,7 @@
                 // Start listening for the response we're about to generate
                 let listenResult = this.#listenForData();
 
-                this.begin().addCmd("UQ").print();
+                await this.begin().addCmd("UQ").print();
 
                 let rawText = await listenResult;
                 let config = this.#parseConfigInquiry(rawText);
@@ -616,7 +616,7 @@
                             // Emem:031K,0037K avl     # Soft font storage
                         case /^Gmem:/.test(str):
                             // Gmem:000K,0037K avl     # Graphics storage
-                        case /^Fmem used:/.test(str):
+                        case /^Fmem:/.test(str):
                             // Fmem:000.0K,060.9K avl  # Form storage
                         case /^Emem used:/.test(str):
                             // Emem used: 0     # Soft font storage
