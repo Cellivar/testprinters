@@ -61,7 +61,7 @@ Cover: T=144, C=167         # (T)reshold and (C)urrent Head Up (open) sensor.
 
 * I - Character set setting
 * r - Double buffering setting. rY enabled, rN disabled
-* JF WY - Unknown? Seem to always be JF and WY
+* JF WY - Unknown? Seem to always be JF and WY. JF WN observed!
 
 
 ### Config settings 2
