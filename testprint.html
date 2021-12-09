@@ -26,6 +26,18 @@
             </div>
             <div class="col-9">
                 <form id="labelForm">
+                    <div class="col row mb-3">
+                        <label for="modalFont" class="col-sm-1 col-form-label">Font</label>
+                        <div class="col-sm-2">
+                            <select id="modalFont" class="form-select" aria-label="Font selection">
+                                <option>1</option>
+                                <option>2</option>
+                                <option>3</option>
+                                <option>4</option>
+                                <option>5</option>
+                            </select>
+                        </div>
+                    </div>
                     <!-- Things to print! -->
                     <textarea id="labelFormText" name="labelText" maxlength="25" cols="25" rows="25" wrap="hard"
                         style="resize: none; font-family: monospace; font-size: 18px; overflow-y: scroll; overflow-x: hidden;"
@@ -201,7 +213,7 @@
             async printerConnect(e) {
                 if (!this.#devices.includes(e.device)) {
                     this.#devices.push(e.device);
-                    let printer = new this.#printerType(this.defaultLabelWidth, this.defaultLabelHeight, e.device);
+                    let printer = new this.#printerType(e.device);
                     await printer.connect();
                     this.#printers.push(printer);
                 }
@@ -260,7 +272,6 @@
                 this.configModal.querySelector('#modalLabelWidth').value = printer.labelWidth;
                 this.configModal.querySelector('#modalLabelHeight').value = printer.labelHeight;
                 this.configModal.querySelector('#modalColor').value = printer.labelColor;
-                this.configModal.querySelector('#modalFont').value = printer.fontSize;
                 this.configModal.querySelector('#modalDarkness').value = printer.density;
                 this.configModal.querySelector('#modalSpeed').value = printer.speed;
                 this.configModalHandle.show();
@@ -290,18 +301,18 @@
                 let highlight = this.#activePrinter == index ? "var(--bs-blue)" : "transparent";
                 let element = document.createElement("div");
                 element.innerHTML = `
-    <li id="printer_${index}" data-device-id="${index}" data-width="${printer.labelWidth}" data-height="${printer.labelHeight}"
-        class="list-group-item d-flex justify-content-between sligh-items-start"
-        style="background: linear-gradient(to left, ${printer.labelColor}, ${highlight}, ${highlight});">
+    <li id="printer_${index}" data-device-id="${index}"
+        class="list-group-item d-flex flex-row justify-content-between sligh-items-start"
+        style="background: linear-gradient(to right, ${highlight}, ${highlight}, ${printer.labelColor}, ${printer.labelColor});">
         <div class="col-sm-8">
             <div class="col-sm-12">
                 <span data-serial="${printer.serial}">${printer.serial}</span>
             </div>
             <div class="col-sm-12">
-                <span>${printer.labelWidth}" x ${printer.labelHeight}"</span><span> Font: ${printer.fontSize}</span>
+                <span>${printer.labelWidth}" x ${printer.labelHeight}"</span>
             </div>
         </div>
-        <div class="col-sm-4">
+        <div class="d-flex flex-row justify-content-end">
             <div class="btn-group" role="group" aria-label="Printer button group">
                 <button id="printto_${index}" class="btn btn-success btn-lg" data-label-width="${printer.labelWidth}" data-label-height="${printer.labelHeight}" data-device-id="${index}">🖨</button>
                     <button class="btn btn-success dropdown-toggle dropdown-toggle-split" data-bs-toggle="dropdown" aria-expanded="false">
@@ -392,15 +403,31 @@
             #xOffset = 0;
             #yOffset = 0;
 
-            constructor(labelWidth, labelHeight, device) {
-                this.labelWidth = labelWidth; // inches
-                this.labelHeight = labelHeight; // inches
+            /**
+             * Create a new instance of the LP2844 class.
+             *
+             * @param device - The WebUSB device object representing the printer.
+             * @param (int) lineSpacing - Additional dots to place between lines.
+             * @param (float) labelDimensionRoundingStep - The nearest fraction of an inch to round label dimensions to.
+             */
+            constructor(device, lineSpacing, labelDimensionRoundingStep) {
                 this.#device = device; // The USB device to work with
 
                 this.labelColor = "#FFFFFF" // Handy to store, not actually used anywhere
 
                 // Additional spacing between lines of text, in dots.
-                this.lineSpacing = 0;
+                this.lineSpacing = lineSpacing || 0;
+
+                // Debug flag for dumping commands to the console before sending
+                // to the printer
+                this.debug = false;
+
+                // The value to round read-from-config label sizes to.
+                // Configuration values can often be slightly off from the
+                // human-readable value, so this normalizes them.
+                // Most labels come in 0.25" increments, if your labels are a different
+                // fraction then set the appropriate rounding fraction.
+                this.labelDimensionRoundingStep = labelDimensionRoundingStep || 0.25;
             }
 
             // LP 2844 and variants use this USB vendor ID
@@ -409,10 +436,9 @@
             // LP 2844 print heads are 203 DPI.
             get dpi() { return this.#dpi; }
 
-            // TODO: This is unreliable as not all printers tell us their serial
-            // number via USB. We should run the inspect command to get the printer
-            // details and use that as the source of truth for the serial number.
             get serial() { return this.#serialNumber; }
+            get firmware() { return this.#firmware; }
+            get modelId() { return this.#modelNumber; }
 
             get commandBuffer() { return this.#cmdBuffer; }
 
@@ -469,9 +495,14 @@
              * Run the commands in the command buffer against the printer, clearing the buffer.
              */
             async print() {
+                console.debug("Sending print command to printer..");
+                if (this.debug) {
+                    console.debug(this.#cmdBuffer);
+                }
                 try {
                     const buffer = (new TextEncoder()).encode(this.#cmdBuffer);
                     await this.#device.transferOut(this.#deviceOut.endpointNumber, buffer);
+                    console.debug("Completed sending print command.");
                 } catch (e) {
                     console.error(`Print error: ${e.name}: ${e.message}`);
                 } finally {
@@ -534,17 +565,23 @@
                 let rawText = await listenResult;
                 let config = this.#parseConfigInquiry(rawText);
 
+                if (this.debug) {
+                    console.debug(config);
+                }
+
                 this.#density = config.density;
                 this.#doubleBuffering = config.doubleBuffering;
                 this.#speed = config.speed;
                 this.#serialNumber = config.serial;
                 this.#firmware = config.firmware;
-                this.#xLabel = config.labelWidthDots - 7;
-                this.#yLabel = config.labelHeightDots - 5;
                 this.#gLabel = config.labelGapDots;
 
-                this.labelWidth = this.#xLabel / this.#dpi;
-                this.labelHeight = this.#yLabel / this.#dpi;
+                let rawX = config.labelWidthDots / this.#dpi;
+                let rawY = config.labelHeightDots / this.#dpi;
+                let inverse = 1.0 / this.labelDimensionRoundingStep
+
+                this.labelWidth = Math.round(rawX * inverse) / inverse;
+                this.labelHeight = Math.round(rawY * inverse) / inverse;
             }
 
             #parseConfigInquiry(rawText) {
@@ -659,10 +696,10 @@
                     do {
                         let result = await this.#device.transferIn(this.#deviceIn.endpointNumber, readLength)
                         text = (new TextDecoder()).decode(result.data);
-                        aggregate += text.replaceAll("\n", "^");
+                        aggregate += text.replaceAll("\n", "\\n");
                     } while (text.length == readLength && !text.endsWith('\n'))
 
-                    console.log("PRINTER SAYS\n>" + aggregate + "<");
+                    console.log("PRINTER SAYS TEXT IN SINGLE QUOTES\n'" + aggregate + "'");
                 }
             }
 
