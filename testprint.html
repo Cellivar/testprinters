@@ -606,6 +606,14 @@
                             let settings1 = str.split(' ');
                             result.doubleBuffering = settings1[1][1] === 'Y'
                             break;
+                        case /^HEAD\s\s\s\susage\s=/.test(str):
+                            // HEAD    usage =     249,392"    # Odometer of the head
+                            result.headDistanceIn = str.substring(20);
+                            break;
+                        case /^PRINTER\susage\s=/.test(str):
+                            // PRINTER usage =     249,392"    # Odometer of the printer
+                            result.printerDistanceIn = str.substring(20);
+                            break;
                         case /^\d\d\s\d\d\s\d\d\s$/.test(str):
                             // 06 10 14                # AutoSense settings, see below
                         case /^oE.,/.test(str):
@@ -674,7 +682,7 @@
              * new instance instead of trying to re-use this one after disposal.
              */
             async dispose() {
-                await this.device.close();
+                await this.#device.close();
             }
 
             /**
