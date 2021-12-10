@@ -11,9 +11,7 @@
         rel="stylesheet">
     <meta name="theme-color" content="#111111" media="(prefers-color-scheme: light)">
     <meta name="theme-color" content="#eeeeee" media="(prefers-color-scheme: dark)">
-
 </head>
-
 <body>
     <div class="container-fluid">
         <div class="row" style="padding-top: 16px;">
@@ -31,15 +29,22 @@
                         <div class="col-sm-2">
                             <input class="form-control" type="number" id="leftOffset" value="10" name="leftOffset">
                         </div>
-                        <label for="modalFont" class="col-sm-1 offset-sm-2 col-form-label">Font</label>
-                        <div class="col-sm-1">
+                        <label for="modalFont" class="col-sm-1 offset-sm-1 col-form-label">Font</label>
+                        <div class="col-sm-2">
                             <select id="modalFont" class="form-select" aria-label="Font selection" name="fontSize">
                                 <option>1</option>
                                 <option>2</option>
                                 <option>3</option>
                                 <option>4</option>
-                                <option selected>5</option>
+                                <option selected value="5">5 (allcaps)</option>
+                                <!-- <option value="6">6 (numbers</option>
+                                <option value="7">7 (numbers)</option> -->
                             </select>
+                        </div>
+                        <label for="labelColor" class="col-sm-2 col-form-label">Label Color</label>
+                        <div class="col-sm-1">
+                            <input id="labelColor" type="color" class="form-control col-sm-1 form-control-color"
+                                value="#FFFFFF" name="labelColor" title="Choose paper color" style="height: 2.5rem;">
                         </div>
                     </div>
                     <textarea id="labelFormText" name="labelText" maxlength="25" cols="25" rows="25" wrap="hard"
@@ -80,29 +85,6 @@
                                         <input id="modalLabelHeight" type="text" class="form-control" placeholder="1.25"
                                             aria-label="Height" required pattern="\d+\.*\d*">
                                         <span id="modalLabelHeightText" class="input-group-text">in</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                        <div class="mb-3">
-                            <div class="row">
-                                <div class="col row mb-3">
-                                    <label for="modalColor" class="col-sm-8 col-form-label">Label Color</label>
-                                    <div class="col-sm-4">
-                                        <input id="modalColor" type="color" class="form-control form-control-color"
-                                            value="#FFFFFF" title="Choose paper color" style="height: 2.5rem;">
-                                    </div>
-                                </div>
-                                <div class="col row mb-3">
-                                    <label for="modalFont" class="col-sm-5 col-form-label">Font</label>
-                                    <div class="col-sm-7">
-                                        <select id="modalFont" class="form-select" aria-label="Font selection">
-                                            <option>1</option>
-                                            <option>2</option>
-                                            <option>3</option>
-                                            <option>4</option>
-                                            <option>5</option>
-                                        </select>
                                     </div>
                                 </div>
                             </div>
@@ -178,6 +160,7 @@
                 this.labelForm.querySelector('#leftOffset').addEventListener('change', () => this.#resizeTextArea());
                 this.labelForm.querySelector('#leftOffset').addEventListener('keyup', () => this.#resizeTextArea());
                 this.labelForm.querySelector('#modalFont').addEventListener('change', () => this.#resizeTextArea());
+                this.labelForm.querySelector('#labelColor').addEventListener('change', () => this.#setLabelColor());
 
                 this.addPrinterBtn = addPrinterBtn;
                 addPrinterBtn.addEventListener('click', async (e) => this.printerPair(e));
@@ -195,6 +178,10 @@
             get activePrinter() { return this.#activePrinter; }
             set activePrinter(value) {
                 this.#activePrinter = value;
+                const p = this.#printers[this.#activePrinter];
+                if (p) {
+                    this.labelForm.querySelector('#labelColor').value = p.labelColor;
+                }
                 this.#resizeTextArea();
             }
 
@@ -304,6 +291,13 @@
                 this.#limitTextArea();
             }
 
+            #setLabelColor() {
+                const p = this.#printers[this.activePrinter];
+                let form = new FormData(this.labelForm);
+                p.labelColor = form.get('labelColor');
+                this.#drawPrinterButtonHighlights();
+            }
+
             resetPrinterButtons() {
                 this.btnContainer.innerHTML = "";
                 this.#printers.forEach((printer, index) => this.#drawPrinterButton(printer, index));
@@ -314,7 +308,6 @@
                 this.configModal.querySelector('#modalPrinterIndexText').textContent = printer.serial;
                 this.configModal.querySelector('#modalLabelWidth').value = printer.labelWidth;
                 this.configModal.querySelector('#modalLabelHeight').value = printer.labelHeight;
-                this.configModal.querySelector('#modalColor').value = printer.labelColor;
                 this.configModal.querySelector('#modalDarkness').value = printer.density;
                 this.configModal.querySelector('#modalSpeed').value = printer.speed;
                 this.configModalHandle.show();
@@ -326,7 +319,6 @@
                 let deviceId = form.modalPrinterIndex.value;
                 let printer = this.#printers[deviceId];
 
-                printer.labelColor = form.modalColor.value;
                 printer.labelWidth = (parseFloat(form.modalLabelWidth.value));
                 printer.labelHeight = (parseFloat(form.modalLabelHeight.value));
                 this.configModalHandle.hide();
@@ -469,7 +461,7 @@
 
                 // Debug flag for dumping commands to the console before sending
                 // to the printer
-                this.debug = false;
+                this.debug = true;
 
                 // The value to round read-from-config label sizes to.
                 // Configuration values can often be slightly off from the
@@ -499,7 +491,9 @@
                     "2": { "y": 17, "x": 12 },
                     "3": { "y": 21, "x": 14 },
                     "4": { "y": 25, "x": 16 },
-                    "5": { "y": 49, "x": 34 }
+                    "5": { "y": 49, "x": 34 },
+                    "6": { "y": 21, "x": 16 },
+                    "7": { "y": 21, "x": 16 },
                 };
             };
 
@@ -653,7 +647,7 @@
                 let result = {
                     model: modelId,
                     firmware: firmware,
-                    serial: "not_reported"
+                    serial: "no_serial"
                 };
 
                 // All the rest of these follow some kind of standard pattern for
@@ -694,11 +688,13 @@
                             break;
                         case /^HEAD\s\s\s\susage\s=/.test(str):
                             // HEAD    usage =     249,392"    # Odometer of the head
-                            result.headDistanceIn = str.substring(20);
+                            let headsplit = str.substring(15).split(' ');
+                            result.headDistanceIn = headsplit[headsplit.length - 1];
                             break;
                         case /^PRINTER\susage\s=/.test(str):
                             // PRINTER usage =     249,392"    # Odometer of the printer
-                            result.printerDistanceIn = str.substring(20);
+                            let printsplit = str.substring(15).split(' ');
+                            result.printerDistanceIn = printsplit[printsplit.length - 1];
                             break;
                         case /^\d\d\s\d\d\s\d\d\s$/.test(str):
                             // 06 10 14                # AutoSense settings, see below
@@ -820,7 +816,7 @@
             setFont(fontNumber) {
                 fontNumber = Math.trunc(fontNumber) || 1;
 
-                if (fontNumber < 1 || fontNumber > 5) {
+                if (fontNumber < 1 || fontNumber > 7) {
                     console.log("Invalid font size! Defaulting to 1");
                     this.#fontNumber = 1;
                     return;
