@@ -54,7 +54,7 @@
                         </div>
                     </div>
                     <textarea id="labelFormText" name="labelText" maxlength="25" cols="25" rows="25" wrap="hard"
-                        style="resize: none; font-family: monospace; font-size: 18px; overflow-y: scroll; overflow-x: hidden;"
+                        style="resize: none; font-family: monospace; font-size: 18px; overflow-y: hidden; overflow-x: hidden;"
                         placeholder="Enter your label text here!"></textarea>
                 </form>
             </div>
@@ -289,7 +289,9 @@
                 xOffset = xOffset >= p.labelWidthDots ? p.labelWidthDots - 1 : xOffset;
 
                 let font = p.fontSizes[fontSize];
-                let cols = Math.floor((p.labelWidthDots - xOffset) / font.x);
+                // Columns in Chrome render a little funny so we subtract one
+                // to match the true print width, more or less.
+                let cols = Math.floor((p.labelWidthDots - xOffset) / font.x) - 1;
                 cols = cols < 1 ? 1 : cols;
                 let rows = Math.floor(p.labelHeightDots / (font.y + lineSpacing));
                 rows = rows < 1 ? 1 : rows;
