@@ -428,8 +428,25 @@
             }
         }
 
+        class LineBreakTransformer {
+            #container = '';
+
+            transform(chunk, controller) {
+                this.#container += chunk;
+                const lines = this.#container.split('\n');
+                this.#container = lines.pop();
+                lines.forEach(line => controller.enqueue(line));
+            }
+
+            flush(controller) {
+                controller.enqueue(this.#container);
+            }
+        }
+
         class lp2844 {
             #cmdBuffer = "";
+            #inputStream;
+            #nextLineCache;
             #device;
             #deviceOut;
             #deviceIn;
@@ -596,6 +613,15 @@
                 await d.selectConfiguration(1);
                 await d.claimInterface(0);
 
+                this.#inputStream = new ReadableStream({
+                    pull: async (controller) => {
+                        const result = await this.#device.transferIn(this.#deviceIn.endpointNumber, 64);
+                        const chunk = new Uint8Array(result.data.buffer, result.data.byteOffset, result.data.byteLength);
+                        controller.enqueue(chunk);
+                    },
+                }).pipeThrough(new TextDecoderStream())
+                  .pipeThrough(new TransformStream(new LineBreakTransformer()));
+
                 // Test the connection by pulling the current configuration.
                 await this.configGetFromPrinter();
 
@@ -759,32 +785,57 @@
                 return result;
             }
 
+            async #nextLine() {
+                if (this.#nextLineCache) {
+                    const line = this.#nextLineCache;
+                    this.#nextLineCache = null;
+                    return line;
+                }
+
+                let timedOut = false;
+                const nextLinePromise = (async () => {
+                    const reader = this.#inputStream.getReader();
+                    const { value, done } = await reader.read();
+                    reader.releaseLock();
+
+                    if (done) {
+                        return;
+                    }
+
+                    if (timedOut) {
+                        this.#nextLineCache = value;
+                        return;
+                    }
+
+                    return value;
+                })();
+
+                const timeoutPromise = new Promise((resolve) => {
+                    setTimeout(() => {
+                        timedOut = true;
+                        resolve();
+                    }, 200);
+                });
+
+                return Promise.race([nextLinePromise, timeoutPromise]);
+            }
+
             async #listenForDataAndConsoleLogAlways() {
                 while (true) {
-                    let aggregate = "";
-                    let text = "";
-                    let readLength = 64;
-                    do {
-                        let result = await this.#device.transferIn(this.#deviceIn.endpointNumber, readLength)
-                        text = (new TextDecoder()).decode(result.data);
-                        aggregate += text.replaceAll("\n", "\\n");
-                    } while (text.length == readLength && !text.endsWith('\n'))
-
-                    console.log("PRINTER SAYS TEXT IN SINGLE QUOTES\n'" + aggregate + "'");
+                    const line = await this.#nextLine();
+                    console.log("PRINTER SAYS TEXT IN SINGLE QUOTES\n'" + line + "'");
                 }
             }
 
             async #listenForData() {
                 let aggregate = "";
-                let text = "";
-                let readLength = 64;
-                do {
-                    let result = await this.#device.transferIn(this.#deviceIn.endpointNumber, readLength)
-                    text = (new TextDecoder()).decode(result.data);
-                    aggregate += text;
-                } while (text.length == 64 && !text.endsWith('\n')) // Probably more to read.
-
-                return aggregate;
+                while (true) {
+                    const line = await this.#nextLine();
+                    if (line === undefined) {
+                        return aggregate;
+                    }
+                    aggregate += line + '\n';
+                }
             }
 
             /**
