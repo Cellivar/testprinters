@@ -47,6 +47,12 @@
                                 value="#FFFFFF" name="labelColor" title="Choose paper color" style="height: 2.5rem;">
                         </div>
                     </div>
+                    <div class="col row mb-3">
+                        <label for="lineSpacing" class="col-sm-2 col-form-label">Line spacing</label>
+                        <div class="col-sm-2">
+                            <input class="form-control" type="number" id="lineSpacing" value="5" name="lineSpacing">
+                        </div>
+                    </div>
                     <textarea id="labelFormText" name="labelText" maxlength="25" cols="25" rows="25" wrap="hard"
                         style="resize: none; font-family: monospace; font-size: 18px; overflow-y: scroll; overflow-x: hidden;"
                         placeholder="Enter your label text here!"></textarea>
@@ -159,6 +165,8 @@
                 this.labelTextarea.addEventListener('change', () => this.#limitTextArea());
                 this.labelForm.querySelector('#leftOffset').addEventListener('change', () => this.#resizeTextArea());
                 this.labelForm.querySelector('#leftOffset').addEventListener('keyup', () => this.#resizeTextArea());
+                this.labelForm.querySelector('#lineSpacing').addEventListener('change', () => this.#resizeTextArea());
+                this.labelForm.querySelector('#lineSpacing').addEventListener('keyup', () => this.#resizeTextArea());
                 this.labelForm.querySelector('#modalFont').addEventListener('change', () => this.#resizeTextArea());
                 this.labelForm.querySelector('#labelColor').addEventListener('change', () => this.#setLabelColor());
 
@@ -213,10 +221,11 @@
             async printerDisconnect(e) {
                 const idx = this.#devices.findIndex(i => e.device == i);
                 if (idx > -1) {
-                    this.#printers[idx].dispose();
+                    const p = this.#printers[idx];
                     this.#devices.splice(idx, 1);
                     this.#printers.splice(idx, 1);
                     this.resetPrinterButtons();
+                    await p.dispose();
                 }
             }
 
@@ -276,13 +285,16 @@
                 let form = new FormData(this.labelForm);
                 let fontSize = parseInt(form.get('fontSize'));
                 let xOffset = parseInt(form.get('leftOffset'));
+                let lineSpacing = parseInt(form.get('lineSpacing'));
                 xOffset = xOffset >= p.labelWidthDots ? p.labelWidthDots - 1 : xOffset;
 
                 let font = p.fontSizes[fontSize];
                 let cols = Math.floor((p.labelWidthDots - xOffset) / font.x);
                 cols = cols < 1 ? 1 : cols;
-                let rows = Math.floor(p.labelHeightDots / font.y);
+                let rows = Math.floor(p.labelHeightDots / (font.y + lineSpacing));
                 rows = rows < 1 ? 1 : rows;
+
+                p.lineSpacing = lineSpacing;
 
                 this.labelTextarea.cols = cols;
                 this.labelTextarea.rows = rows;
@@ -487,13 +499,13 @@
                 return {
                     // Each character has 2 dots of inter-character space added
                     // between each character and one dot added for vertical
-                    "1": { "y": 13, "x": 10 },
-                    "2": { "y": 17, "x": 12 },
-                    "3": { "y": 21, "x": 14 },
-                    "4": { "y": 25, "x": 16 },
-                    "5": { "y": 49, "x": 34 },
-                    "6": { "y": 21, "x": 16 },
-                    "7": { "y": 21, "x": 16 },
+                    "1": { "y": 10, "x": 10 },
+                    "2": { "y": 14, "x": 12 },
+                    "3": { "y": 16, "x": 14 },
+                    "4": { "y": 20, "x": 16.2 },
+                    "5": { "y": 48, "x": 36 },
+                    "6": { "y": 19, "x": 16 },
+                    "7": { "y": 19, "x": 16 },
                 };
             };
 
@@ -600,17 +612,31 @@
              * uncommitted configuration changes.
              */
             async configGetFromPrinter() {
-                // Start listening for the response we're about to generate
-                let listenResult = this.#listenForData();
+                var config;
+                var validConfig = false;
+                var retryLimit = 3;
+                do {
+                    retryLimit--;
 
-                await this.begin().addCmd("UQ").print();
+                    // Start listening for the response we're about to generate
+                    let listenResult = this.#listenForData();
 
-                let rawText = await listenResult;
-                let config = this.#parseConfigInquiry(rawText);
+                    await this.begin().addCmd("UQ").print();
 
-                if (this.debug) {
-                    console.debug(config);
-                }
+                    let rawText = await listenResult;
+                    config = this.#parseConfigInquiry(rawText);
+
+                    if (this.debug) {
+                        console.debug(config);
+                    }
+
+                    // All firmwares return these values, if they failed to parse
+                    // out for any reason it means we got an error reading the
+                    // config and we should try again.
+                    validConfig = config.hasOwnProperty("labelWidthDots") &&
+                        config.hasOwnProperty("firmware") &&
+                        config.hasOwnProperty("speed");
+                } while (!validConfig && retryLimit > 0)
 
                 this.#density = config.density;
                 this.#doubleBuffering = config.doubleBuffering;
