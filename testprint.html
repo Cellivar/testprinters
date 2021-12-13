@@ -56,6 +56,7 @@
                     <textarea id="labelFormText" name="labelText" maxlength="25" cols="25" rows="25" wrap="hard"
                         style="resize: none; font-family: monospace; font-size: 18px; overflow-y: hidden; overflow-x: hidden;"
                         placeholder="Enter your label text here!"></textarea>
+                        <canvas id="canvas" width="584" height="160" style="border: 2px solid blue"></canvas>
                 </form>
             </div>
         </div>
@@ -445,8 +446,28 @@
             }
         }
 
+        class PrinterCommunicationMode {
+            static None = new PrinterCommunicationMode(false, false);
+            static Unidirectional = new PrinterCommunicationMode(true, false);
+            static Bidirectional = new PrinterCommunicationMode(true, true);
+
+            consturctor(output, input){
+                this.output = output;
+                this.input = input;
+            }
+
+            static getCommunicationMode(output, input) {
+                if (output === undefined) {
+                    return PrinterCommunicationMode.None;
+                } else if (input === undefined) {
+                    return PrinterCommunicationMode.Unidirectional;
+                } else {
+                    return PrinterCommunicationMode.Bidirectional;
+                }
+            }
+        }
+
         class lp2844 {
-            #cmdBuffer = "";
             #inputStream;
             #nextLineCache;
             #device;
@@ -456,6 +477,10 @@
             #modelNumber;
             #firmware;
             #doubleBuffering;
+
+            #commMode = PrinterCommunicationMode.None;
+
+            #rawCmdBuffer = [];
 
             #fontNumber = "1";
             #speed = 4;
@@ -505,6 +530,8 @@
             // LP 2844 and variants use this USB vendor ID
             static get usbVendorId() { return 0x0a5f; }
 
+            get communicationMode() { return this.#commMode }
+
             // LP 2844 print heads are 203 DPI.
             get dpi() { return this.#dpi; }
 
@@ -512,12 +539,31 @@
             get firmware() { return this.#firmware; }
             get modelId() { return this.#modelNumber; }
 
-            get commandBuffer() { return this.#cmdBuffer; }
+            get rawCommandBuffer() {
+                const bufferLen = this.#rawCmdBuffer.reduce((sum, arr) => sum + arr.byteLength, 0);
+                const buffer = new Uint8Array(bufferLen);
+                this.#rawCmdBuffer.reduce((offset, arr) => {
+                    buffer.set(arr, offset);
+                    return arr.byteLength + offset;
+                }, 0);
+
+                return buffer;
+            }
+
+            get commandBuffer() {
+                return new TextDecoder("ascii").decode(this.rawCommandBuffer);
+            }
 
             get fontSizes() {
                 return {
                     // Each character has 2 dots of inter-character space added
                     // between each character and one dot added for vertical
+                    // Note that the font sizes here do not correspond to the
+                    // documentation, they were discovered through trial and error
+                    // They are zero-height as line spacing must be handled manually
+                    // while character spacing is automatic.
+                    // And yes font 4 is somewhere beween 16 and 17 characters wide.
+                    // 16.2 seems to be stable over the full 4" print width.
                     "1": { "y": 10, "x": 10 },
                     "2": { "y": 14, "x": 12 },
                     "3": { "y": 16, "x": 14 },
@@ -571,11 +617,10 @@
             async print() {
                 console.debug("Sending print command to printer..");
                 if (this.debug) {
-                    console.debug(this.#cmdBuffer);
+                    console.debug(this.commandBuffer);
                 }
                 try {
-                    const buffer = (new TextEncoder()).encode(this.#cmdBuffer);
-                    await this.#device.transferOut(this.#deviceOut.endpointNumber, buffer);
+                    await this.#device.transferOut(this.#deviceOut.endpointNumber, this.rawCommandBuffer);
                     console.debug("Completed sending print command.");
                 } catch (e) {
                     console.error(`Print error: ${e.name}: ${e.message}`);
@@ -583,6 +628,13 @@
                     this.clearCommandBuffer();
                     this.clearOffsets();
                 }
+            }
+
+            /**
+             * Feed a blank label.
+             */
+            async feed() {
+                this.begin().end().print();
             }
 
             /**
@@ -603,36 +655,53 @@
                     }
                 }
 
-                if (!o || !i) {
-                    console.error("Failed to connect input or output to printer!");
+                if (!o) {
+                    console.error("Failed to find an output for printer, cannot communicate!");
+                } else {
+                    this.#deviceOut = o;
                 }
 
-                this.#deviceOut = o;
-                this.#deviceIn = i;
+                if (!i) {
+                    console.warn("Failed to find an input endpoint for printer, using unidirectinal mode.");
+                } else {
+                    this.#deviceIn = i;
+                }
+
+                this.#commMode = PrinterCommunicationMode.getCommunicationMode(this.#deviceOut, this.#deviceIn);
+                if (this.#commMode === PrinterCommunicationMode.None) {
+                    // Can't talk to the printer so don't try.
+                    return;
+                }
 
                 // And wire 'em up!
                 await d.open();
                 await d.selectConfiguration(1);
                 await d.claimInterface(0);
 
-                this.#inputStream = new ReadableStream({
-                    pull: async (controller) => {
-                        const result = await this.#device.transferIn(this.#deviceIn.endpointNumber, 64);
-                        const chunk = new Uint8Array(result.data.buffer, result.data.byteOffset, result.data.byteLength);
-                        controller.enqueue(chunk);
-                    },
-                }).pipeThrough(new TextDecoderStream())
-                  .pipeThrough(new TransformStream(new LineBreakTransformer()));
+                if (this.#commMode === PrinterCommunicationMode.Bidirectional) {
+                    this.#inputStream = new ReadableStream({
+                        pull: async (controller) => {
+                            const result = await this.#device.transferIn(this.#deviceIn.endpointNumber, 64);
+                            const chunk = new Uint8Array(result.data.buffer, result.data.byteOffset, result.data.byteLength);
+                            controller.enqueue(chunk);
+                        },
+                    }).pipeThrough(new TextDecoderStream())
+                    .pipeThrough(new TransformStream(new LineBreakTransformer()));
 
-                // Test the connection by pulling the current configuration.
-                await this.configGetFromPrinter();
+                    // Test the connection by pulling the current configuration.
+                    await this.configGetFromPrinter();
 
-                if (debugByLoggingPrinterToConsole) {
-                    // Whatever messages arrive will be dumped straight to the
-                    // console. Note that this eats up the incoming data so
-                    // other listening commands won't work while this is active.
-                    this.#listenForDataAndConsoleLogAlways();
+                    if (debugByLoggingPrinterToConsole) {
+                        // Whatever messages arrive will be dumped straight to the
+                        // console. Note that this eats up the incoming data so
+                        // other listening commands won't work while this is active.
+                        this.#listenForDataAndConsoleLogAlways();
+                    }
+                } else {
+                    this.#serialNumber = "Manual Setup";
                 }
+
+                return this.#commMode;
             }
 
             /**
@@ -681,6 +750,9 @@
                 this.labelHeight = Math.round(rawY * inverse) / inverse;
             }
 
+            /**
+             * Parse the configuration coming from the printer
+             */
             #parseConfigInquiry(rawText) {
                 const lines = rawText
                     .replaceAll('\r', '')
@@ -865,19 +937,19 @@
 
                 this.begin()
                     .setOffset(0, lineHeight)
-                    .addLine(this.labelWidthDots, 20)
+                    .addLine(this.labelWidthDots, lineHeight)
                     .setOffset(0, lineHeight * 2)
-                    .addLine(quarter, 20)
+                    .addLine(quarter, lineHeight)
                     .setOffset(quarter, lineHeight * 3)
-                    .addLine(quarter, 20)
+                    .addLine(quarter, lineHeight)
                     .setOffset(quarter * 2, lineHeight * 4)
-                    .addLine(quarter, 20)
+                    .addLine(quarter, lineHeight)
                     .setOffset(quarter * 3, lineHeight * 5)
-                    .addLine(quarter, 20)
+                    .addLine(quarter, lineHeight)
                     .setOffset(0, lineHeight * 6);
 
                 let slashStart = (lineHeight * 6) + 5;
-                let slashHeight = 12;
+                let slashHeight = 8;
                 for (let i = 0; i <= this.labelWidthDots; i += 4) {
                     this.setOffset(i + 0, slashStart + 0)
                         .addLine(1, slashHeight)
@@ -948,6 +1020,17 @@
             }
 
             /**
+             * Set the direction the label prints (top to bottom or bottom to top)
+             *
+             * @param (bool) upsideDown - True to print upside down, otherwise rightside up.
+             */
+            async configPrintDirection(upsideDown) {
+                upsideDown = upsideDown || false;
+                let dir = upsideDown ? "T" : "B"
+                await this.begin().addCmd("Z" + dir).print();
+            }
+
+            /**
              * Configure the speed of the print.
              *
              * @param (int) speed - 1 (slow) to 4 (fast) print speed.
@@ -957,6 +1040,54 @@
                 speed = (speed < 1 || speed > 4) ? 4 : speed;
 
                 await this.begin().addCmd("S" + speed).print();
+            }
+
+            /**
+             * Draw an image into the buffer.
+             *
+             * @param (ImageData) imageData - An ImageData object, see Canvas.getImageData.
+             */
+            addImage(imageData) {
+                // Only supports sRGB as RGBA data.
+                if (imageData.colorSpace !== "srgb") {
+                    console.error("Unknown color space for given imageData! Expected srgb but got " + imageData.colorSpace);
+                    return;
+                }
+
+                // TODO: Figure out how to add padding to ensure the image width
+                // lands on an 8 byte boundary. Right now it'll just end up truncating
+                // the extra data on each line which is not ideal.
+
+                // RGBA data gets compressed down to 1 bit, then packed into a byte array.
+                // Note that the passed in width and height aren't relevant here, just
+                // what the imageData says.
+                const buffer = new Uint8Array(imageData.height * imageData.width / 8);
+                const d = imageData.data;
+
+                // If the grayscale version of the pixel + alpha is above this
+                // value treat it as white, else black.
+                const threshold = 200;
+
+                for (var y = 0; y < imageData.height; y++) {
+                    for (var x = 0; x < imageData.width; x++) {
+                        let o = (y * imageData.width * 4) + (x * 4);
+                        let gray = Math.min(Math.pow((Math.pow(d[o]/255.0,2.2)*0.2126+Math.pow(d[o + 1]/255.0,2.2)*0.7152+Math.pow(d[o + 2]/255.0,2.2)*0.0722),0.454545)*255)
+                        let alpha = d[o + 3] / 255;
+                        let grayAlpha = ((1 - alpha) * 255) + (alpha * gray);
+                        let bit = (grayAlpha > threshold ? 1 : 0) << (7 - x % 8);
+
+                        buffer[(y * imageData.width / 8) + Math.floor(x / 8)] |= bit;
+                    }
+                }
+
+                let parameters = ["GW" + this.#xOffset, this.#yOffset, Math.trunc(imageData.width / 8), imageData.height];
+                this.addRawCmd(new TextEncoder().encode(parameters.join(',') + ','));
+                this.addRawCmd(buffer);
+                this.addCmd("");
+
+                this.#yOffset += imageData.height;
+
+                return this;
             }
 
             /**
@@ -1039,6 +1170,13 @@
                 return this;
             }
 
+            /**
+             * Draw a box
+             *
+             * @param (int) length - The width of the box to draw
+             * @param (int) height - The height of the box to draw
+             * @param (int) thickness - The thickness of the box's lines
+             */
             addBox(length, height, thickness) {
                 length = Math.trunc(length) || 0;
                 height = Math.trunc(height) || 0;
@@ -1057,15 +1195,31 @@
              * addCmd("A10", 10, 0, 1, 1, 1, "N", "Hello World!");
              */
             addCmd(...parameters) {
-                this.#cmdBuffer += parameters.join(',') + "\n";
+                this.addRawCmd(new TextEncoder().encode(parameters.join(',') + "\n"));
                 return this;
             }
 
+            /**
+             * Add a raw byte array to the command buffer.
+             *
+             * @param (Uint8Array) array - Array of ASCII characters for the command to add.
+             */
+            addRawCmd(array) {
+                this.#rawCmdBuffer.push(array);
+                return this;
+            }
+
+            /**
+             * Empty the command buffer.
+             */
             clearCommandBuffer() {
-                this.#cmdBuffer = "";
+                this.#rawCmdBuffer = [];
                 return this;
             }
 
+            /**
+             * Reset the offsets to 0.
+             */
             clearOffsets() {
                 this.#xOffset = 0;
                 this.#yOffset = 0;
@@ -1105,6 +1259,22 @@
                 printerMgr = new PrinterManager(lp2844, btnContainer, labelForm, addPrinterBtn, modalElement);
 
                 printerMgr.printerReloadAll();
+
+                let c = document.getElementById("canvas").getContext('2d');
+
+                let fontName = "emojisymbols";
+
+                // EmojiSymbols Font (c)blockworks - Kenichi Kaneko http://emojisymbols.com/
+                let font = new FontFace(fontName, 'url(fonts/EmojiSymbols-Regular.woff)');
+                font.load().then(() => {
+                    document.fonts.add(font);
+                    c.font = `72pt ${fontName}`;
+                    c.imageSmoothingEnabled = false;
+                    //c.fillStyle = "#FFFFFF";
+                    c.fillText("👏", 0, 100);
+                    c.font = '24pt Sans-serif';
+                    c.fillText("BOTTOM TEXT", 100, 130);
+                });
             }
         });
     </script>
